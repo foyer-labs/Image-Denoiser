@@ -48,12 +48,21 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
-          # Il nome esatto del pacchetto Windows si ricava dal link nella pagina principale.
+          # Nome e indirizzo del pacchetto Windows si ricavano dal link nella pagina principale.
           $home_page = (Invoke-WebRequest https://exiftool.org/ -UseBasicParsing).Content
           $zip = [regex]::Match($home_page, 'exiftool-[0-9.]+_64\.zip').Value
           if (-not $zip) { throw "Link al pacchetto Windows di ExifTool non trovato" }
-          Write-Host "Pacchetto: $zip"
-          Invoke-WebRequest "https://exiftool.org/$zip" -OutFile $zip -UseBasicParsing
+          $href = [regex]::Match($home_page, 'href="([^"]*' + [regex]::Escape($zip) + '[^"]*)"').Groups[1].Value
+          $urls = @()
+          if ($href) { $urls += ([Uri]::new([Uri]"https://exiftool.org/", $href)).AbsoluteUri }
+          $urls += "https://exiftool.org/$zip"
+          $urls += "https://sourceforge.net/projects/exiftool/files/$zip/download"
+          $ok = $false
+          foreach ($u in $urls) {
+            Write-Host "Download: $u"
+            try { Invoke-WebRequest $u -OutFile $zip -UseBasicParsing -UserAgent "curl/8"; $ok = $true; break } catch { Write-Host "  non riuscito: $($_.Exception.Message)" }
+          }
+          if (-not $ok) { throw "Download di ExifTool non riuscito" }
           $sums = (Invoke-WebRequest https://exiftool.org/checksums.txt -UseBasicParsing).Content
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
           if ($sums -notmatch ([regex]::Escape($zip) + "\)\s*=\s*" + $hash)) { throw "Impronta di ExifTool non verificata" }
