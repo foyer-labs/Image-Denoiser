@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "denoiser"
+version = "0.1.0"
+description = "Riduzione del rumore per foto RAW, JPG e PNG, interamente in locale"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "rawpy>=0.21",
+    "opencv-python-headless>=4.9",
+    "scikit-image>=0.22",
+    "PyWavelets>=1.5",
+    "tifffile>=2024.1.0",
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6-Essentials>=6.6"]
+dev = ["pytest>=8", "pidng>=4.0"]
+build = ["pyinstaller>=6.5"]
+
+[project.scripts]
+denoiser = "denoiser.cli:main"
+
+[project.gui-scripts]
+denoiser-gui = "denoiser.gui.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

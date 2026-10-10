@@ -1,0 +1,118 @@
+from pathlib import Path
+
+import numpy as np
+import pytest
+from skimage.metrics import peak_signal_noise_ratio as psnr
+
+from denoiser.algorithms import ALGORITHMS
+from denoiser.bayer import display_rect_to_sensor, orient
+from denoiser.image import Domain, ImageData, ImageMeta
+from denoiser.io import load_image
+from denoiser.io.raw import decode_raw
+from denoiser.pipeline import analyze, render, uses_sensor_stage
+from denoiser.settings import Settings
+from synthetic import clean_display
+
+ALGORITHM_KEYS = sorted(ALGORITHMS)
+
+
+def _settings(algorithm: str, stage: str = "sensor") -> Settings:
+    s = Settings()
+    s.denoise.algorithm = algorithm
+    s.denoise.raw_stage = stage
+    s.tone.auto_brightness = False
+    return s
+
+
+@pytest.mark.parametrize("algorithm", ALGORITHM_KEYS)
+def test_display_image_denoise_improves_psnr(algorithm):
+    clean = clean_display(256)
+    rng = np.random.default_rng(0)
+    noisy = np.clip(clean + rng.normal(0, 0.05, clean.shape), 0, 1).astype(np.float32)
+    image = ImageData(noisy, Domain.DISPLAY, ImageMeta(Path("x.jpg"), "jpeg"))
+    out = render(image, analyze(image), _settings(algorithm))
+    assert psnr(clean, out, data_range=1) > psnr(clean, noisy, data_range=1) + 3
+
+
+@pytest.mark.parametrize("stage", ["sensor", "rgb"])
+@pytest.mark.parametrize("algorithm", ALGORITHM_KEYS)
+def test_raw_denoise_improves_psnr(dng_pair, algorithm, stage):
+    clean_path, noisy_path = dng_pair
+    clean = decode_raw(clean_path, measure_noise=False)
+    noisy = load_image(noisy_path)
+    settings = _settings(algorithm, stage)
+    reference = render(clean, analyze(clean), settings, denoise=False)
+    analysis = analyze(noisy)
+    before = psnr(reference, render(noisy, analysis, settings, denoise=False), data_range=1)
+    after = psnr(reference, render(noisy, analysis, settings), data_range=1)
+    assert after > before + 1.0
+
+
+def test_sensor_stage_beats_rgb_stage(dng_pair):
+    clean_path, noisy_path = dng_pair
+    clean = decode_raw(clean_path, measure_noise=False)
+    noisy = load_image(noisy_path)
+    analysis = analyze(noisy)
+    results = {}
+    for stage in ("sensor", "rgb"):
+        settings = _settings("wavelet", stage)
+        reference = render(clean, analyze(clean), settings, denoise=False)
+        results[stage] = psnr(reference, render(noisy, analysis, settings), data_range=1)
+    assert results["sensor"] > results["rgb"]
+
+
+def test_noise_twin_measures_sensor_noise(dng_pair):
+    from conftest import NOISE_A
+
+    _, noisy_path = dng_pair
+    image = load_image(noisy_path)
+    assert image.raw_source is not None
+    sensor = image.noise_profile.sensor_model
+    assert np.all(np.abs(sensor.a / NOISE_A - 1) < 0.25)
+
+
+@pytest.mark.parametrize("stage", ["sensor", "rgb"])
+@pytest.mark.parametrize("algorithm", ["nlm", "bilateral"])
+def test_region_matches_full_render(dng_pair, algorithm, stage):
+    _, noisy_path = dng_pair
+    image = load_image(noisy_path)
+    analysis = analyze(image)
+    settings = _settings(algorithm, stage)
+    full = render(image, analysis, settings)
+    region = (40, 30, 100, 80)
+    part = render(image, analysis, settings, region=region)
+    x, y, w, h = region
+    assert part.shape == (h, w, 3)
+    assert np.percentile(np.abs(full[y : y + h, x : x + w] - part), 99) < 0.01
+
+
+def test_disabled_strengths_leave_image_unchanged(dng_pair):
+    _, noisy_path = dng_pair
+    image = load_image(noisy_path)
+    analysis = analyze(image)
+    settings = _settings("wavelet")
+    settings.denoise.luma_strength = 0
+    settings.denoise.chroma_strength = 0
+    assert np.array_equal(render(image, analysis, settings), render(image, analysis, settings, denoise=False))
+
+
+def test_sensor_stage_used_only_for_bayer_raw(dng_pair):
+    _, noisy_path = dng_pair
+    raw_image = load_image(noisy_path)
+    jpeg_like = ImageData(clean_display(64), Domain.DISPLAY, ImageMeta(Path("x.jpg"), "jpeg"))
+    assert uses_sensor_stage(raw_image, Settings())
+    assert not uses_sensor_stage(jpeg_like, Settings())
+    rgb = Settings()
+    rgb.denoise.raw_stage = "rgb"
+    assert not uses_sensor_stage(raw_image, rgb)
+
+
+@pytest.mark.parametrize("flip", [0, 3, 5, 6])
+def test_display_rect_maps_to_sensor(flip):
+    sensor = np.arange(6 * 10).reshape(6, 10)
+    shown = orient(sensor, flip)
+    rect = (1, 2, 3, 2)  # x, y, w, h nell'immagine orientata
+    x, y, w, h = rect
+    sx, sy, sw, sh = display_rect_to_sensor(rect, flip, sensor.shape[1], sensor.shape[0])
+    expected = shown[y : y + h, x : x + w]
+    assert np.array_equal(orient(sensor[sy : sy + sh, sx : sx + sw], flip), expected)
