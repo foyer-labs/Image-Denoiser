@@ -84,3 +84,57 @@ def test_batch_on_folder(tmp_path, dng_pair):
     # Una seconda esecuzione non sovrascrive.
     again = process_file(files[0], settings)
     assert again.output.name == "scatto_dn_1.png"
+
+
+def test_dng_export_roundtrip(tmp_path, dng_pair):
+    from denoiser.batch import export_image
+    from denoiser.io.raw import decode_raw
+    from denoiser.pipeline import analyze, denoise_region
+
+    _, noisy = dng_pair
+    image = load_image(noisy)
+    analysis = analyze(image)
+    for stage in ("sensor", "rgb"):
+        settings = Settings()
+        settings.output.format = "dng"
+        settings.denoise.raw_stage = stage
+        path = export_image(image, analysis, settings, tmp_path / f"{stage}.dng")
+        back = decode_raw(path, measure_noise=False)
+        expected = denoise_region(image, analysis, settings)
+        assert back.pixels.shape == expected.shape
+        assert np.abs(back.pixels - expected).max() < 1e-3
+
+
+def test_dng_export_refused_for_jpeg(tmp_path):
+    from denoiser.batch import process_file
+
+    src = save_image(clean_display(32), tmp_path / "foto.jpg", "jpeg")
+    settings = Settings()
+    settings.output.format = "dng"
+    result = process_file(src, settings)
+    assert not result.ok and "solo per le foto RAW" in result.error
+
+
+def test_bayer_dng_with_camera_matrix(tmp_path, dng_pair):
+    """Percorso dei RAW proprietari: matrice colore e bilanciamento presi da LibRaw."""
+    from denoiser.io.dng import XYZ_TO_SRGB, SensorData, write_bayer_dng
+    from denoiser.io.raw import decode_raw
+
+    _, noisy = dng_pair
+    original = decode_raw(noisy, measure_noise=False)
+    import rawpy
+
+    with rawpy.imread(str(noisy)) as raw:
+        cfa = raw.raw_image_visible.copy()
+    sensor = SensorData(
+        cfa=cfa, pattern=np.array([[0, 1], [1, 2]], dtype=np.uint8), black=np.full((2, 2), 256.0),
+        white=4095, xyz_to_camera=XYZ_TO_SRGB, camera_neutral=np.ones(3), flip=6,
+    )
+    path = write_bayer_dng(tmp_path / "camera.dng", sensor, "Marca", "Modello")
+    back = decode_raw(path, measure_noise=False)
+    # Orientamento 6: l'immagine riletta è ruotata di 90° in senso orario.
+    assert back.pixels.shape == (original.width, original.height, 3)
+    diff = np.abs(back.pixels - np.rot90(original.pixels, -1))
+    # Pochi pixel isolati possono differire per le scelte locali della demosaicizzazione AHD.
+    assert diff.mean() < 1e-3 and np.percentile(diff, 99) < 5e-3
+    assert back.meta.camera == "Marca Modello"

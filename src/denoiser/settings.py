@@ -34,6 +34,7 @@ OUTPUT_FORMATS: dict[str, str] = {
     "tiff": "TIFF",
     "jpeg": "JPEG",
     "png": "PNG",
+    "dng": "DNG (solo da RAW)",
 }
 
 

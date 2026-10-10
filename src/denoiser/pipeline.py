@@ -98,56 +98,69 @@ def render(
     progress: ProgressFn | None = None,
 ) -> np.ndarray:
     """Restituisce l'immagine (o la regione) pronta da visualizzare/salvare: sRGB float32 in [0, 1]."""
+    work = denoise_region(image, analysis, settings, region, denoise, progress)
+    return np.ascontiguousarray(_tone(work, image.domain, analysis, settings))
+
+
+def denoise_region(
+    image: ImageData,
+    analysis: Analysis,
+    settings: Settings,
+    region: Region | None = None,
+    denoise: bool = True,
+    progress: ProgressFn | None = None,
+) -> np.ndarray:
+    """Come :func:`render` ma senza resa tonale: RGB lineare per i RAW, valori originali per JPG/PNG."""
     ds = settings.denoise
     algorithm = get_algorithm(ds.algorithm)
     x, y, w, h = region if region is not None else (0, 0, image.width, image.height)
     active = ds.luma_strength > 0 or ds.chroma_strength > 0 or ds.hot_pixel_threshold > 0
     if denoise and active and uses_sensor_stage(image, settings):
-        linear = _render_sensor_stage(image, settings, region, progress)
-        return np.ascontiguousarray(_tone(linear, image.domain, analysis, settings))
+        return _render_sensor_stage(image, settings, region, progress)
 
     margin = algorithm.margin if denoise else 0
     px0, py0 = max(0, x - margin), max(0, y - margin)
     px1, py1 = min(image.width, x + w + margin), min(image.height, y + h + margin)
     work = image.pixels[py0:py1, px0:px1].copy()
+    if denoise and active:
+        work = _denoise_rgb_stage(work, analysis, settings, algorithm, progress)
+    if progress is not None:
+        progress(1.0, "Completato")
+    return np.ascontiguousarray(work[y - py0 : y - py0 + h, x - px0 : x - px0 + w])
 
-    def report(fraction: float, message: str) -> None:
+
+def _denoise_rgb_stage(
+    work: np.ndarray, analysis: Analysis, settings: Settings, algorithm, progress: ProgressFn | None
+) -> np.ndarray:
+    """Livello 2 (RAW sviluppati) e immagini già codificate (JPG, PNG, TIFF)."""
+    ds = settings.denoise
+    if ds.hot_pixel_threshold > 0:
         if progress is not None:
-            progress(fraction, message)
-
-    if denoise:
-        if ds.hot_pixel_threshold > 0:
-            report(0.0, "Pixel caldi")
-            work, _ = remove_hot_pixels(work, ds.hot_pixel_threshold, _noise_std_fn(analysis))
-        strengths = (ds.luma_strength, ds.chroma_strength, ds.chroma_strength)
-        if any(s > 0 for s in strengths):
-            model = analysis.noise_model
-            stab = vst.forward(work, model) if model is not None else work
-            if algorithm.joint:
-                # Le reti lavorano su valori circa in [0, 1].
-                scale = vst.max_value(model) if model is not None else 1.0
-                cleaned = joint_denoise(algorithm, stab / scale, analysis.component_sigma / scale, ds, progress)
-                stab = cleaned * scale
-                work = vst.inverse(stab, model) if model is not None else stab
-                report(1.0, "Completato")
-                out = _tone(work, image.domain, analysis, settings)
-                return np.ascontiguousarray(out[y - py0 : y - py0 + h, x - px0 : x - px0 + w])
-            opp = rgb_to_opponent(stab)
-            for i, strength in enumerate(strengths):
-                report(i / 3, f"Denoise {_COMPONENT_NAMES[i]}")
-                if strength <= 0:
-                    continue
-                original = opp[..., i].copy()
-                cleaned = algorithm.denoise(original, float(analysis.component_sigma[i] * strength), ds.params)
-                if i == 0 and ds.detail > 0:
-                    cleaned = cleaned + ds.detail * (original - cleaned)
-                opp[..., i] = cleaned
-            stab = opponent_to_rgb(opp)
-            work = vst.inverse(stab, model) if model is not None else stab
-    report(1.0, "Completato")
-
-    out = _tone(work, image.domain, analysis, settings)
-    return np.ascontiguousarray(out[y - py0 : y - py0 + h, x - px0 : x - px0 + w])
+            progress(0.0, "Pixel caldi")
+        work, _ = remove_hot_pixels(work, ds.hot_pixel_threshold, _noise_std_fn(analysis))
+    strengths = (ds.luma_strength, ds.chroma_strength, ds.chroma_strength)
+    if not any(s > 0 for s in strengths):
+        return work
+    model = analysis.noise_model
+    stab = vst.forward(work, model) if model is not None else work
+    if algorithm.joint:
+        # Le reti lavorano su valori circa in [0, 1].
+        scale = vst.max_value(model) if model is not None else 1.0
+        stab = joint_denoise(algorithm, stab / scale, analysis.component_sigma / scale, ds, progress) * scale
+    else:
+        opp = rgb_to_opponent(stab)
+        for i, strength in enumerate(strengths):
+            if progress is not None:
+                progress(i / 3, f"Denoise {_COMPONENT_NAMES[i]}")
+            if strength <= 0:
+                continue
+            original = opp[..., i].copy()
+            cleaned = algorithm.denoise(original, float(analysis.component_sigma[i] * strength), ds.params)
+            if i == 0 and ds.detail > 0:
+                cleaned = cleaned + ds.detail * (original - cleaned)
+            opp[..., i] = cleaned
+        stab = opponent_to_rgb(opp)
+    return vst.inverse(stab, model) if model is not None else stab
 
 
 def uses_sensor_stage(image: ImageData, settings: Settings) -> bool:

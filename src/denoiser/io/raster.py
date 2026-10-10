@@ -43,7 +43,7 @@ def load_jpeg(path: Path) -> ImageData:
     pixels, _ = _normalize(rgb)
     info = read_basic_exif(path)
     meta = ImageMeta(
-        source=path, kind="jpeg", camera=info.camera, iso=info.iso, date=info.date,
+        source=path, kind="jpeg", camera=info.camera, make=info.make, model=info.model, iso=info.iso, date=info.date,
         bits_per_sample=8, exif_bytes=exif_bytes,
     )
     return ImageData(pixels=pixels, domain=Domain.DISPLAY, meta=meta)
@@ -62,6 +62,6 @@ def load_png_or_tiff(path: Path, kind: str) -> ImageData:
     rgb, alpha = _split_channels(norm)
     info = read_basic_exif(path)
     meta = ImageMeta(
-        source=path, kind=kind, camera=info.camera, iso=info.iso, date=info.date, bits_per_sample=bits,
+        source=path, kind=kind, camera=info.camera, make=info.make, model=info.model, iso=info.iso, date=info.date, bits_per_sample=bits,
     )
     return ImageData(pixels=np.ascontiguousarray(rgb), domain=Domain.DISPLAY, meta=meta, alpha=alpha)

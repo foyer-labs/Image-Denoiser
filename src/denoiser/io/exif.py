@@ -18,6 +18,8 @@ _ISO, _DATE_ORIGINAL = 0x8827, 0x9003
 @dataclass
 class BasicExif:
     camera: str = ""
+    make: str = ""
+    model: str = ""
     iso: float | None = None
     date: str = ""  # AAAAMMGG
 
@@ -32,6 +34,7 @@ def read_basic_exif(path: Path) -> BasicExif:
         return info
     make = str(exif.get(_MAKE, "")).strip("\x00 ")
     model = str(exif.get(_MODEL, "")).strip("\x00 ")
+    info.make, info.model = make, model
     info.camera = model if model.lower().startswith(make.lower()) else f"{make} {model}".strip()
     try:
         sub = exif.get_ifd(_EXIF_IFD)

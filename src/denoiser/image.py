@@ -29,6 +29,8 @@ class ImageMeta:
     #: "raw", "dng-convertito", "jpeg", "png", "tiff"
     kind: str
     camera: str = ""
+    make: str = ""
+    model: str = ""
     iso: float | None = None
     #: Data di scatto AAAAMMGG, se nota.
     date: str = ""

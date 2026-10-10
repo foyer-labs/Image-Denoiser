@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
-from ..batch import process_file, save_result
+from ..batch import export_image, process_file
 from ..image import ImageData
 from ..io import load_image
 from ..io.dng_converter import find_converter
@@ -293,8 +293,7 @@ class MainWindow(QMainWindow):
         self._busy(f"Esportazione di {destination.name}…")
 
         def export(progress=None):
-            pixels = render(image, analysis, settings, progress=progress)
-            return save_result(image, pixels, settings, destination)
+            return export_image(image, analysis, settings, destination, progress)
 
         task = Task(export, with_progress=True)
         task.signals.progress.connect(self._on_progress)

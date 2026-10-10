@@ -12,7 +12,7 @@ Infine i dati ripuliti vengono riscritti nel RAW e sviluppati da LibRaw.
 from __future__ import annotations
 
 import io
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 import cv2
 import numpy as np
@@ -21,6 +21,9 @@ import rawpy
 from .algorithms import Denoiser
 from .noise import NoiseModel
 from .settings import DenoiseSettings
+
+if TYPE_CHECKING:
+    from .io.dng import SensorData
 
 # Righe: luminanza, rosso-blu, verde-magenta, differenza tra i due verdi.
 # Colonne: piani nell'ordine R, G1, G2, B.
@@ -227,3 +230,36 @@ def develop_denoised(
         if progress is not None:
             progress(0.95, "Sviluppo del RAW")
         return raw.postprocess(**params).astype(np.float32) / 65535.0
+
+
+def denoised_sensor_data(
+    data: bytes,
+    model: NoiseModel,
+    algorithm: Denoiser,
+    settings: DenoiseSettings,
+    flip: int,
+    denoise: bool = True,
+    progress: Callable[[float, str], None] | None = None,
+) -> "SensorData":
+    """Dati del sensore ripuliti (area visibile) e informazioni per scriverli in un DNG Bayer."""
+    from .io.dng import SensorData, color_tags_from_dng_bytes, neutral_from_multipliers
+
+    with rawpy.imread(io.BytesIO(data)) as raw:
+        if denoise:
+            denoise_sensor_region(raw, None, model, algorithm, settings, progress)
+        layout = BayerLayout(raw)
+        colors = raw.raw_colors_visible[:2, :2]
+        desc = raw.color_desc.decode("ascii", "replace")
+        pattern = np.vectorize(lambda c: {"R": 0, "G": 1, "B": 2}.get(desc[c], 1))(colors)
+        blacks = np.asarray(raw.black_level_per_channel, dtype=float)[colors]
+        xyz = np.asarray(raw.rgb_xyz_matrix, dtype=float)[:3]
+        return SensorData(
+            cfa=raw.raw_image_visible.copy(),
+            pattern=pattern.astype(np.uint8),
+            black=blacks,
+            white=layout.white,
+            xyz_to_camera=xyz if np.any(xyz) else None,
+            camera_neutral=neutral_from_multipliers(raw.camera_whitebalance),
+            flip=flip,
+            source_color_tags=color_tags_from_dng_bytes(data),
+        )

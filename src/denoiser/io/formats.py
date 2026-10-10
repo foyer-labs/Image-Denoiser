@@ -18,7 +18,7 @@ TIFF_EXTENSIONS = frozenset({".tif", ".tiff"})
 
 SUPPORTED_EXTENSIONS = RAW_EXTENSIONS | JPEG_EXTENSIONS | PNG_EXTENSIONS | TIFF_EXTENSIONS
 
-OUTPUT_EXTENSIONS = {"tiff": ".tif", "jpeg": ".jpg", "png": ".png"}
+OUTPUT_EXTENSIONS = {"tiff": ".tif", "jpeg": ".jpg", "png": ".png", "dng": ".dng"}
 
 
 def kind_of(path: Path) -> str | None:

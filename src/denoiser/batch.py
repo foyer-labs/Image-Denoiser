@@ -7,11 +7,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
-from .image import ImageData
+from .algorithms import get_algorithm
+from .bayer import denoised_sensor_data
+from .image import Domain, ImageData
 from .io import load_image, save_image
+from .io.dng import write_bayer_dng, write_linear_dng
 from .io.formats import is_supported
 from .io.naming import output_path, unique_path
-from .pipeline import Analysis, ProgressFn, analyze, render
+from .pipeline import Analysis, ProgressFn, analyze, denoise_region, render, uses_sensor_stage
 from .settings import Settings
 
 
@@ -58,8 +61,19 @@ def settings_description(settings: Settings) -> str:
     )
 
 
-def save_result(image: ImageData, pixels, settings: Settings, destination: Path) -> Path:
+def export_image(
+    image: ImageData,
+    analysis: Analysis,
+    settings: Settings,
+    destination: Path,
+    progress: ProgressFn | None = None,
+) -> Path:
+    """Elabora l'intera foto e la salva nel formato scelto."""
     out = settings.output
+    description = settings_description(settings)
+    if out.format == "dng":
+        return _export_dng(image, analysis, settings, destination, description, progress)
+    pixels = render(image, analysis, settings, progress=progress)
     return save_image(
         pixels,
         destination,
@@ -68,8 +82,34 @@ def save_result(image: ImageData, pixels, settings: Settings, destination: Path)
         jpeg_quality=out.jpeg_quality,
         alpha=image.alpha if out.format != "jpeg" else None,
         exif_bytes=image.meta.exif_bytes,
-        description=settings_description(settings),
+        description=description,
     )
+
+
+def _export_dng(
+    image: ImageData,
+    analysis: Analysis,
+    settings: Settings,
+    destination: Path,
+    description: str,
+    progress: ProgressFn | None,
+) -> Path:
+    if image.domain is not Domain.LINEAR:
+        raise ValueError("Il formato DNG è disponibile solo per le foto RAW: scegli TIFF, PNG o JPEG.")
+    make, model = image.meta.make, image.meta.model
+    exposure = settings.tone.exposure_ev
+    if uses_sensor_stage(image, settings):
+        # Livello 3: si salvano i dati del sensore ripuliti, il fotoritocco farà il resto.
+        src = image.raw_source
+        assert src is not None
+        ds = settings.denoise
+        active = ds.luma_strength > 0 or ds.chroma_strength > 0 or ds.hot_pixel_threshold > 0
+        sensor = denoised_sensor_data(
+            src.data, src.sensor_model, get_algorithm(ds.algorithm), ds, src.flip, denoise=active, progress=progress
+        )
+        return write_bayer_dng(destination, sensor, make, model, exposure, description)
+    linear = denoise_region(image, analysis, settings, progress=progress)
+    return write_linear_dng(destination, linear, make, model, exposure, description)
 
 
 def process_file(
@@ -91,8 +131,7 @@ def process_file(
         if destination.exists() and not settings.output.overwrite:
             destination = unique_path(destination)
         analysis = analysis or analyze(image)
-        pixels = render(image, analysis, settings, progress=progress)
-        result.output = save_result(image, pixels, settings, destination)
+        result.output = export_image(image, analysis, settings, destination, progress)
     except Exception as exc:  # l'errore viene riportato all'utente, il batch prosegue
         result.error = str(exc) or exc.__class__.__name__
     return result

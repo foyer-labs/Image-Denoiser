@@ -146,3 +146,29 @@ def test_neural_algorithm_without_weights_reports_clearly(dng_pair, monkeypatch,
     image = load_image(noisy_path)
     with pytest.raises(ModelNotAvailableError, match="modelli scarica drunet"):
         render(image, analyze(image), _settings("drunet"))
+
+
+@pytest.mark.parametrize("flip", [6, 5, 3])
+def test_rotated_raw_region_matches_full(tmp_path, dng_pair, flip):
+    """Foto verticali/capovolte: l'anteprima di una zona al livello 3 deve coincidere con la foto intera."""
+    import rawpy
+
+    from denoiser.io.dng import XYZ_TO_SRGB, SensorData, write_bayer_dng
+
+    _, noisy_path = dng_pair
+    with rawpy.imread(str(noisy_path)) as raw:
+        cfa = raw.raw_image_visible[:, :200].copy()  # non quadrata
+    sensor = SensorData(
+        cfa=cfa, pattern=np.array([[0, 1], [1, 2]], dtype=np.uint8), black=np.full((2, 2), 256.0),
+        white=4095, xyz_to_camera=XYZ_TO_SRGB, camera_neutral=np.ones(3), flip=flip,
+    )
+    image = load_image(write_bayer_dng(tmp_path / "ruotata.dng", sensor))
+    expected_shape = (200, 256) if flip in (5, 6) else (256, 200)
+    assert (image.height, image.width) == expected_shape
+    analysis = analyze(image)
+    settings = _settings("nlm", "sensor")
+    full = render(image, analysis, settings)
+    region = (30, 50, 90, 70)
+    x, y, w, h = region
+    part = render(image, analysis, settings, region=region)
+    assert np.percentile(np.abs(full[y : y + h, x : x + w] - part), 99) < 0.01

@@ -83,4 +83,5 @@ def _load_raw(
     if not image.meta.camera:
         info = read_basic_exif(path)
         image.meta.camera, image.meta.iso, image.meta.date = info.camera, info.iso, info.date
+        image.meta.make, image.meta.model = info.make, info.model
     return image

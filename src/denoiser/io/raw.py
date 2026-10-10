@@ -61,6 +61,8 @@ def decode_raw(path: Path, develop: DevelopSettings | None = None, measure_noise
         raise RawNotSupportedError(f"LibRaw non riconosce il file ({exc.__class__.__name__}).") from exc
 
     with raw:
+        # Va letto prima dello sviluppo: con user_flip=0 LibRaw lo azzera.
+        flip = int(raw.sizes.flip)
         if not is_dng and not _has_color_matrix(raw):
             raise RawNotSupportedError(
                 "LibRaw non conosce i colori di questa fotocamera (matrice colore assente): "
@@ -102,7 +104,6 @@ def decode_raw(path: Path, develop: DevelopSettings | None = None, measure_noise
         except _UNSUPPORTED_ERRORS as exc:
             raise RawNotSupportedError(f"LibRaw non riesce a sviluppare il file ({exc.__class__.__name__}).") from exc
         cfa = _cfa_pattern(raw)
-        flip = int(raw.sizes.flip)
         sensor_shape = raw.raw_image_visible.shape
         profile = None
         if cfa is not None and measure_noise:
@@ -124,6 +125,8 @@ def decode_raw(path: Path, develop: DevelopSettings | None = None, measure_noise
         source=path,
         kind="raw",
         camera=exif.camera,
+        make=exif.make,
+        model=exif.model,
         iso=exif.iso,
         date=exif.date,
         bits_per_sample=16,
