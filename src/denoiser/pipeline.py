@@ -25,6 +25,7 @@ from .algorithms import get_algorithm
 from .color import opponent_to_rgb, rgb_to_opponent, srgb_encode
 from .hotpixel import remove_hot_pixels
 from .image import Domain, ImageData
+from .joint import joint_denoise
 from .noise import NoiseModel, estimate_noise_model, estimate_sigma, sample_tiles
 from .settings import Settings
 
@@ -122,6 +123,15 @@ def render(
         if any(s > 0 for s in strengths):
             model = analysis.noise_model
             stab = vst.forward(work, model) if model is not None else work
+            if algorithm.joint:
+                # Le reti lavorano su valori circa in [0, 1].
+                scale = vst.max_value(model) if model is not None else 1.0
+                cleaned = joint_denoise(algorithm, stab / scale, analysis.component_sigma / scale, ds, progress)
+                stab = cleaned * scale
+                work = vst.inverse(stab, model) if model is not None else stab
+                report(1.0, "Completato")
+                out = _tone(work, image.domain, analysis, settings)
+                return np.ascontiguousarray(out[y - py0 : y - py0 + h, x - px0 : x - px0 + w])
             opp = rgb_to_opponent(stab)
             for i, strength in enumerate(strengths):
                 report(i / 3, f"Denoise {_COMPONENT_NAMES[i]}")

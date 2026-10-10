@@ -16,6 +16,10 @@ dependencies = [
     "PyWavelets>=1.5",
     "tifffile>=2024.1.0",
     "Pillow>=10.0",
+    "onnx>=1.15",
+    "onnxruntime>=1.17; sys_platform != 'win32'",
+    # Su Windows DirectML usa qualsiasi GPU (NVIDIA, AMD, Intel) senza installare CUDA.
+    "onnxruntime-directml>=1.17; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

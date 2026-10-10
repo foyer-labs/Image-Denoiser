@@ -190,6 +190,36 @@ def _cmd_preset(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_modelli(args: argparse.Namespace) -> int:
+    from .neural.models import MODELS, download, is_downloaded, models_dir
+    from .neural.runtime import describe_devices
+
+    if args.azione == "elenca":
+        print(f"Cartella dei modelli: {models_dir()}")
+        print(describe_devices())
+        for spec in MODELS.values():
+            state = "scaricato" if is_downloaded(spec) else f"da scaricare ({spec.size_mb} MB)"
+            print(f"\n{spec.key} — {spec.label}: {state}\n  {spec.description}\n  Licenza: {spec.license}")
+        return 0
+    keys = list(MODELS) if args.modello in (None, "tutti") else [args.modello]
+    for key in keys:
+        if key not in MODELS:
+            print(f"Modello sconosciuto: {key}. Disponibili: {', '.join(MODELS)}", file=sys.stderr)
+            return 1
+        spec = MODELS[key]
+
+        def progress(fraction: float, message: str) -> None:
+            print(f"\r{message}   ", end="", flush=True)
+
+        try:
+            path = download(spec, progress)
+        except Exception as exc:
+            print(f"\nDownload di {spec.label} non riuscito: {exc}", file=sys.stderr)
+            return 1
+        print(f"\n{spec.label}: {path}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="denoiser", description="Riduzione del rumore per foto RAW, JPG e PNG.")
     parser.add_argument("--version", action="version", version=f"denoiser {__version__}")
@@ -208,6 +238,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("algoritmi", help="elenca algoritmi e parametri")
     p.set_defaults(func=_cmd_algoritmi)
+
+    p = sub.add_parser("modelli", help="elenca o scarica i modelli neurali")
+    p.add_argument("azione", choices=("elenca", "scarica"))
+    p.add_argument("modello", nargs="?", help="drunet, scunet o tutti (predefinito)")
+    p.set_defaults(func=_cmd_modelli)
 
     p = sub.add_parser("preset", help="elenca o salva preset")
     p.add_argument("azione", choices=("elenca", "salva"))

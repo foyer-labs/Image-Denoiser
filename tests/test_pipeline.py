@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import numpy as np
@@ -13,7 +14,9 @@ from denoiser.pipeline import analyze, render, uses_sensor_stage
 from denoiser.settings import Settings
 from synthetic import clean_display
 
-ALGORITHM_KEYS = sorted(ALGORITHMS)
+ALGORITHM_KEYS = sorted(k for k, a in ALGORITHMS.items() if not a.joint)
+NEURAL_KEYS = sorted(k for k, a in ALGORITHMS.items() if a.joint)
+_WEIGHTS = os.environ.get("DENOISER_TEST_WEIGHTS")
 
 
 def _settings(algorithm: str, stage: str = "sensor") -> Settings:
@@ -116,3 +119,30 @@ def test_display_rect_maps_to_sensor(flip):
     sx, sy, sw, sh = display_rect_to_sensor(rect, flip, sensor.shape[1], sensor.shape[0])
     expected = shown[y : y + h, x : x + w]
     assert np.array_equal(orient(sensor[sy : sy + sh, sx : sx + sw], flip), expected)
+
+
+@pytest.mark.skipif(not _WEIGHTS, reason="pesi reali non disponibili")
+@pytest.mark.parametrize("stage", ["sensor", "rgb"])
+@pytest.mark.parametrize("algorithm", NEURAL_KEYS)
+def test_neural_raw_denoise(dng_pair, monkeypatch, algorithm, stage):
+    monkeypatch.setenv("DENOISER_MODELS_DIR", _WEIGHTS)
+    clean_path, noisy_path = dng_pair
+    clean = decode_raw(clean_path, measure_noise=False)
+    noisy = load_image(noisy_path)
+    settings = _settings(algorithm, stage)
+    settings.denoise.params = {"tile": "256"}
+    reference = render(clean, analyze(clean), settings, denoise=False)
+    analysis = analyze(noisy)
+    before = psnr(reference, render(noisy, analysis, settings, denoise=False), data_range=1)
+    after = psnr(reference, render(noisy, analysis, settings), data_range=1)
+    assert after > before + 1.5
+
+
+def test_neural_algorithm_without_weights_reports_clearly(dng_pair, monkeypatch, tmp_path):
+    from denoiser.neural.models import ModelNotAvailableError
+
+    monkeypatch.setenv("DENOISER_MODELS_DIR", str(tmp_path))
+    _, noisy_path = dng_pair
+    image = load_image(noisy_path)
+    with pytest.raises(ModelNotAvailableError, match="modelli scarica drunet"):
+        render(image, analyze(image), _settings("drunet"))

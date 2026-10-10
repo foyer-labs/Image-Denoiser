@@ -52,3 +52,10 @@ def inverse(stabilized: np.ndarray, model: NoiseModel) -> np.ndarray:
         z = np.where(d < 1.5, algebraic, z)
         out[..., c] = np.maximum(z, 0.0) * alpha
     return out
+
+
+def max_value(model: NoiseModel) -> float:
+    """Valore stabilizzato massimo (segnale 1 = saturazione), usato per normalizzare in [0, 1]."""
+    return max(
+        float(2.0 * np.sqrt(1.0 / alpha + 0.375 + sigma2)) for alpha, sigma2 in (_params(model, c) for c in range(3))
+    )

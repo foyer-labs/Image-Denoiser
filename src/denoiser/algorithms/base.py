@@ -50,6 +50,14 @@ class Denoiser(ABC):
     params: tuple[Param, ...] = ()
     #: Pixel di contorno necessari per elaborare un ritaglio senza artefatti ai bordi.
     margin: int = 16
+    #: True per gli algoritmi che elaborano i tre canali insieme (reti neurali).
+    joint: bool = False
+    #: True se l'algoritmo non usa il livello di rumore (la forza diventa una miscela).
+    blind: bool = False
+
+    def is_available(self) -> bool:
+        """False se mancano risorse da scaricare (es. i pesi di una rete neurale)."""
+        return True
 
     def resolve(self, values: dict[str, Any] | None) -> dict[str, Any]:
         values = values or {}

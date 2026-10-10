@@ -137,6 +137,21 @@ def denoise_sensor_region(
     if settings.hot_pixel_threshold > 0:
         stacked = _remove_hot_pixels(stacked, settings.hot_pixel_threshold)
 
+    if algorithm.joint:
+        stacked = _joint_sensor_denoise(stacked, model, layout, algorithm, settings, progress)
+    else:
+        stacked = _packed_denoise(stacked, algorithm, settings, progress)
+
+    for k, ((i, j, black), c) in enumerate(zip(layout.planes, layout.rgb)):
+        span = max(layout.white - black, 1.0)
+        plane = _unstabilize(stacked[..., k], float(model.a[c]), float(model.b[c]))
+        block[i::2, j::2] = np.clip(np.round(plane * span + black), 0, 65535).astype(visible.dtype)
+
+
+def _packed_denoise(
+    stacked: np.ndarray, algorithm: Denoiser, settings: DenoiseSettings, progress: Callable[[float, str], None] | None
+) -> np.ndarray:
+    """Algoritmi classici: componenti ortonormali dei quattro piani, ripulite una alla volta."""
     comps = stacked @ _PACKED.T
     strengths = (settings.luma_strength, settings.chroma_strength, settings.chroma_strength, settings.chroma_strength)
     names = ("luminanza", "colore rosso-blu", "colore verde-magenta", "equilibrio dei verdi")
@@ -151,12 +166,39 @@ def denoise_sensor_region(
         if k == 0 and settings.detail > 0:
             cleaned = cleaned + settings.detail * (original - cleaned)
         comps[..., k] = cleaned
-    stacked = comps @ _PACKED  # trasformazione ortonormale: l'inversa è la trasposta
+    return comps @ _PACKED  # trasformazione ortonormale: l'inversa è la trasposta
 
-    for k, ((i, j, black), c) in enumerate(zip(layout.planes, layout.rgb)):
-        span = max(layout.white - black, 1.0)
-        plane = _unstabilize(stacked[..., k], float(model.a[c]), float(model.b[c]))
-        block[i::2, j::2] = np.clip(np.round(plane * span + black), 0, 65535).astype(visible.dtype)
+
+def _joint_sensor_denoise(
+    stacked: np.ndarray,
+    model: NoiseModel,
+    layout: "BayerLayout",
+    algorithm: Denoiser,
+    settings: DenoiseSettings,
+    progress: Callable[[float, str], None] | None,
+) -> np.ndarray:
+    """Reti neurali: i piani diventano un'immagine RGB a metà risoluzione (verde = media dei due verdi).
+
+    La differenza tra i due verdi (dettaglio fine e squilibrio dei verdi) viene ripulita a parte
+    con la wavelet.
+    """
+    from .algorithms import get_algorithm
+    from .joint import joint_denoise
+
+    scale = max(float(_stabilize(np.float32(1.0), float(model.a[c]), float(model.b[c]))) for c in range(3))
+    r, g1, g2, b = (stacked[..., k] for k in range(4))
+    rgb = np.stack([r, (g1 + g2) / 2, b], axis=-1) / scale
+    diff = (g1 - g2) / np.sqrt(2)
+    # Rumore dopo la trasformata: 1 su R e B, 1/sqrt(2) sulla media dei verdi.
+    per_channel = np.sqrt((1.0 + 0.5 + 1.0) / 3.0) / scale
+    cleaned = joint_denoise(algorithm, rgb, np.full(3, per_channel), settings, progress) * scale
+    if settings.chroma_strength > 0:
+        wavelet = get_algorithm("wavelet")
+        diff = wavelet.denoise(np.ascontiguousarray(diff), float(settings.chroma_strength), {})
+    g = cleaned[..., 1]
+    return np.stack(
+        [cleaned[..., 0], g + diff / np.sqrt(2), g - diff / np.sqrt(2), cleaned[..., 2]], axis=-1
+    ).astype(np.float32)
 
 
 def _remove_hot_pixels(stacked: np.ndarray, threshold: float) -> np.ndarray:
