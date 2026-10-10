@@ -4,13 +4,20 @@
 
 import os
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
 # I percorsi sono relativi alla cartella di questo file (SPECPATH).
 SRC = os.path.join(SPECPATH, "..", "src")
 
-hiddenimports = collect_submodules("skimage.restoration") + collect_submodules("pywt")
-datas = collect_data_files("skimage")
+hiddenimports = (
+    collect_submodules("skimage.restoration")
+    + collect_submodules("pywt")
+    + collect_submodules("onnxruntime")
+    + ["onnx", "onnx.helper", "onnx.numpy_helper", "onnx.checker"]
+)
+datas = collect_data_files("skimage") + collect_data_files("onnxruntime")
+# onnxruntime (e DirectML su Windows) vive in librerie dinamiche da includere esplicitamente.
+binaries = collect_dynamic_libs("onnxruntime")
 excludes = ["tkinter", "matplotlib", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore"]
 
 
@@ -20,6 +27,7 @@ def analysis(script):
         pathex=[SRC],
         hiddenimports=hiddenimports,
         datas=datas,
+        binaries=binaries,
         excludes=excludes,
         noarchive=False,
     )

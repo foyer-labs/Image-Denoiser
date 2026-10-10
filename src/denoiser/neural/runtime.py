@@ -44,14 +44,34 @@ class InferenceSessionWrapper:
             options.enable_mem_pattern = False
             options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         providers.append("CPUExecutionProvider")
-        self.session = ort.InferenceSession(str(path), sess_options=options, providers=providers)
+        try:
+            self.session = ort.InferenceSession(str(path), sess_options=options, providers=providers)
+        except Exception:
+            if providers == ["CPUExecutionProvider"]:
+                raise
+            # GPU non utilizzabile (driver, memoria…): si ripiega sulla CPU.
+            self.session = ort.InferenceSession(
+                str(path), sess_options=ort.SessionOptions(), providers=["CPUExecutionProvider"]
+            )
+        self._path = path
         self.provider = self.session.get_providers()[0]
         self.input_name = self.session.get_inputs()[0].name
         self._run_lock = threading.Lock()
 
     def __call__(self, batch: np.ndarray) -> np.ndarray:
         with self._run_lock:  # una sessione GPU alla volta
-            return self.session.run(None, {self.input_name: batch.astype(np.float32)})[0]
+            feed = {self.input_name: batch.astype(np.float32)}
+            try:
+                return self.session.run(None, feed)[0]
+            except Exception:
+                if self.provider == "CPUExecutionProvider":
+                    raise
+                # Errore sulla GPU (es. memoria esaurita con tasselli grandi): si continua sulla CPU.
+                import onnxruntime as ort
+
+                self.session = ort.InferenceSession(str(self._path), providers=["CPUExecutionProvider"])
+                self.provider = "CPUExecutionProvider"
+                return self.session.run(None, feed)[0]
 
 
 def get_session(path: Path, device: str = "auto") -> InferenceSessionWrapper:

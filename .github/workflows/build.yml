@@ -22,6 +22,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
+      - name: Installa ExifTool (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y -q libimage-exiftool-perl
       - name: Test
         run: python -m pytest -q
 
@@ -40,8 +43,40 @@ jobs:
           python -m pip install ".[gui,build]"
       - name: Crea l'eseguibile
         run: pyinstaller packaging/denoiser.spec --noconfirm
+      - name: Includi ExifTool (copia completa dei metadati)
+        # Se il download non riesce l'app funziona comunque, copiando solo i metadati essenziali.
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ver = (Invoke-WebRequest https://exiftool.org/ver.txt -UseBasicParsing).Content.Trim()
+          $zip = "exiftool-${ver}_64.zip"
+          Invoke-WebRequest "https://exiftool.org/$zip" -OutFile $zip -UseBasicParsing
+          $sums = (Invoke-WebRequest https://exiftool.org/checksums.txt -UseBasicParsing).Content
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if ($sums -notmatch ([regex]::Escape($zip) + "\)\s*=\s*" + $hash)) { throw "Impronta di ExifTool non verificata" }
+          Expand-Archive $zip -DestinationPath exiftool_tmp
+          $exe = Get-ChildItem exiftool_tmp -Recurse -Filter "exiftool*.exe" | Select-Object -First 1
+          New-Item -ItemType Directory -Force dist\Denoiser\exiftool | Out-Null
+          Copy-Item -Recurse "$($exe.DirectoryName)\*" dist\Denoiser\exiftool\
+          Rename-Item "dist\Denoiser\exiftool\$($exe.Name)" exiftool.exe
+          dist\Denoiser\exiftool\exiftool.exe -ver
       - name: Verifica la riga di comando
         run: dist\Denoiser\denoiser-cli.exe --version
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/modelli
+          key: modelli-drunet-479abe3c
+      - name: Verifica il modello neurale nell'eseguibile
+        shell: pwsh
+        env:
+          DENOISER_MODELS_DIR: ${{ runner.temp }}/modelli
+        run: |
+          python -c "import numpy as np; from PIL import Image; rng=np.random.default_rng(0); img=np.clip(np.linspace(0,1,256)[None,:,None]*np.ones((192,256,3))+rng.normal(0,0.08,(192,256,3)),0,1); Image.fromarray((img*255).astype('uint8')).save('prova.png')"
+          dist\Denoiser\denoiser-cli.exe modelli scarica drunet
+          if ($LASTEXITCODE -ne 0) { throw "download non riuscito" }
+          dist\Denoiser\denoiser-cli.exe elabora prova.png --algoritmo drunet --param tile=256 --formato png
+          if ($LASTEXITCODE -ne 0) { throw "elaborazione neurale non riuscita" }
+          if (-not (Test-Path denoised\prova_dn.png)) { throw "file di uscita mancante" }
       - name: Verifica l'avvio dell'interfaccia
         shell: pwsh
         env:
