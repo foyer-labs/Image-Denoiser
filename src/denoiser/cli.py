@@ -253,6 +253,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Su Windows l'output reindirizzato usa la codepage locale: i caratteri non
+    # rappresentabili vengono sostituiti invece di interrompere il programma.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     parser = build_parser()
     args = parser.parse_args(argv)
     if getattr(args, "azione", None) == "salva" and not args.nome_preset:

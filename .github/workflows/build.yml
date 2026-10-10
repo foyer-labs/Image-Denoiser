@@ -48,8 +48,11 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
-          $ver = (Invoke-WebRequest https://exiftool.org/ver.txt -UseBasicParsing).Content.Trim()
-          $zip = "exiftool-${ver}_64.zip"
+          # Il nome esatto del pacchetto Windows si ricava dal link nella pagina principale.
+          $home_page = (Invoke-WebRequest https://exiftool.org/ -UseBasicParsing).Content
+          $zip = [regex]::Match($home_page, 'exiftool-[0-9.]+_64\.zip').Value
+          if (-not $zip) { throw "Link al pacchetto Windows di ExifTool non trovato" }
+          Write-Host "Pacchetto: $zip"
           Invoke-WebRequest "https://exiftool.org/$zip" -OutFile $zip -UseBasicParsing
           $sums = (Invoke-WebRequest https://exiftool.org/checksums.txt -UseBasicParsing).Content
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
