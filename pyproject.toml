@@ -20,7 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 gui = ["PySide6-Essentials>=6.6"]
-dev = ["pytest>=8", "pidng>=4.0"]
+dev = ["pytest>=8"]
 build = ["pyinstaller>=6.5"]
 
 [project.scripts]

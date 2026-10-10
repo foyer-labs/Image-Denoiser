@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import tifffile
 from skimage import data
 
 from denoiser.color import srgb_decode
@@ -43,12 +44,6 @@ def write_bayer_dng(
     seed: int = 0,
 ) -> Path:
     """Scrive un DNG Bayer RGGB a partire da un'immagine lineare, con rumore Poisson-gaussiano opzionale."""
-    from pidng.core import RAW2DNG, DNGTags, Tag
-    from pidng.defs import (
-        CalibrationIlluminant, CFAPattern, DNGVersion, Orientation, PhotometricInterpretation,
-        PreviewColorSpace,
-    )
-
     h, w = linear.shape[:2]
     h, w = h - h % 2, w - w % 2
     mosaic = np.empty((h, w), dtype=np.float32)
@@ -58,33 +53,25 @@ def write_bayer_dng(
     mosaic[1::2, 1::2] = linear[1:h:2, 1:w:2, 2]
     if a > 0 or b > 0:
         mosaic = poisson_gaussian(mosaic, max(a, 1e-9), b, seed)
-    span = white - black
-    dn = np.clip(np.round(mosaic * span + black), 0, white).astype(np.uint16)
+    dn = np.clip(np.round(mosaic * (white - black) + black), 0, white).astype(np.uint16)
 
-    t = DNGTags()
-    t.set(Tag.ImageWidth, w)
-    t.set(Tag.ImageLength, h)
-    t.set(Tag.TileWidth, w)
-    t.set(Tag.TileLength, h)
-    t.set(Tag.Orientation, Orientation.Horizontal)
-    t.set(Tag.PhotometricInterpretation, PhotometricInterpretation.Color_Filter_Array)
-    t.set(Tag.SamplesPerPixel, 1)
-    t.set(Tag.BitsPerSample, 16)
-    t.set(Tag.CFARepeatPatternDim, [2, 2])
-    t.set(Tag.CFAPattern, CFAPattern.RGGB)
-    t.set(Tag.BlackLevel, black)
-    t.set(Tag.WhiteLevel, white)
-    t.set(Tag.ColorMatrix1, [[int(round(v * 10000)), 10000] for row in _XYZ_TO_SRGB for v in row])
-    t.set(Tag.CalibrationIlluminant1, CalibrationIlluminant.D65)
-    t.set(Tag.AsShotNeutral, [[1, 1], [1, 1], [1, 1]])
-    t.set(Tag.Make, "Sintetica")
-    t.set(Tag.Model, "Sintetica Bayer")
-    t.set(Tag.DNGVersion, DNGVersion.V1_4)
-    t.set(Tag.DNGBackwardVersion, DNGVersion.V1_2)
-    t.set(Tag.PreviewColorSpace, PreviewColorSpace.sRGB)
-
-    path = Path(path)
-    converter = RAW2DNG()
-    converter.options(t, path=str(path.parent), compress=False)
-    converter.convert(dn, filename=path.stem)
-    return path.with_suffix(".dng")
+    matrix: list[int] = []
+    for v in np.asarray(_XYZ_TO_SRGB).ravel():
+        matrix += [int(round(v * 10000)), 10000]
+    tags = [
+        (33421, "H", 2, (2, 2), True),  # CFARepeatPatternDim
+        (33422, "B", 4, (0, 1, 1, 2), True),  # CFAPattern: R G / G B
+        (50706, "B", 4, (1, 4, 0, 0), True),  # DNGVersion
+        (50707, "B", 4, (1, 2, 0, 0), True),  # DNGBackwardVersion
+        (50708, "s", 0, "Sintetica Bayer", True),  # UniqueCameraModel
+        (50714, "I", 1, (black,), True),  # BlackLevel
+        (50717, "I", 1, (white,), True),  # WhiteLevel
+        (50721, "2i", 9, tuple(matrix), True),  # ColorMatrix1
+        (50778, "H", 1, (21,), True),  # CalibrationIlluminant1 = D65
+        (50728, "2I", 3, (1, 1, 1, 1, 1, 1), True),  # AsShotNeutral
+        (271, "s", 0, "Sintetica", True),  # Make
+        (272, "s", 0, "Sintetica Bayer", True),  # Model
+    ]
+    path = Path(path).with_suffix(".dng")
+    tifffile.imwrite(path, dn, photometric=32803, subfiletype=0, extratags=tags, metadata=None)
+    return path

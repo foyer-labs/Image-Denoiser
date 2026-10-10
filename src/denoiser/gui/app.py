@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from .main_window import MainWindow
@@ -21,6 +23,9 @@ def main(argv: list[str] | None = None) -> int:
     files = [Path(a) for a in argv[1:] if Path(a).is_file()]
     if files:
         window.open_path(files[0])
+    # Usato dalla build automatica per verificare che l'eseguibile si avvii.
+    if os.environ.get("DENOISER_SMOKE_TEST"):
+        QTimer.singleShot(1500, app.quit)
     return app.exec()
 
 
