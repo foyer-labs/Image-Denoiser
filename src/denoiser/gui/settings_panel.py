@@ -24,6 +24,13 @@ from ..settings import DEMOSAIC_ALGORITHMS, OUTPUT_FORMATS, RAW_STAGES, WB_MODES
 from .widgets import FloatControl, ParamForm, make_combo, set_combo
 
 
+def _algorithm_labels() -> dict[str, str]:
+    labels = {}
+    for key, alg in ALGORITHMS.items():
+        labels[key] = alg.label if alg.is_available() else f"{alg.label} — da scaricare"
+    return labels
+
+
 class SettingsPanel(QWidget):
     denoiseChanged = Signal()
     toneChanged = Signal()
@@ -45,6 +52,9 @@ class SettingsPanel(QWidget):
         layout.addWidget(self._build_denoise())
         self.algo_box = QGroupBox("Parametri dell'algoritmo")
         self.algo_layout = QVBoxLayout(self.algo_box)
+        self.neural_info = QLabel()
+        self.neural_info.setWordWrap(True)
+        self.algo_layout.addWidget(self.neural_info)
         self.algo_form: ParamForm | None = None
         layout.addWidget(self.algo_box)
         layout.addWidget(self._build_raw())
@@ -58,7 +68,7 @@ class SettingsPanel(QWidget):
         d = self._settings.denoise
         box = QGroupBox("Riduzione del rumore")
         form = QFormLayout(box)
-        self.algorithm = make_combo({k: a.label for k, a in ALGORITHMS.items()}, d.algorithm)
+        self.algorithm = make_combo(_algorithm_labels(), d.algorithm)
         self.algorithm.setToolTip("\n\n".join(f"{a.label}: {a.description}" for a in ALGORITHMS.values()))
         self.algorithm.currentIndexChanged.connect(self._on_algorithm)
         form.addRow("Algoritmo", self.algorithm)
@@ -201,6 +211,18 @@ class SettingsPanel(QWidget):
         self.overwrite.setChecked(o.overwrite)
         self.overwrite.toggled.connect(self._on_output)
         form.addRow("", self.overwrite)
+
+        from ..io.metadata import find_exiftool
+
+        exiftool = find_exiftool()
+        self.copy_metadata = QCheckBox("Copia tutti i metadati dell'originale")
+        self.copy_metadata.setChecked(o.copy_metadata)
+        self.copy_metadata.setToolTip(
+            "Data, fotocamera, obiettivo, esposizione, GPS, parole chiave… copiati con ExifTool.\n"
+            + (f"ExifTool: {exiftool}" if exiftool else "ExifTool non trovato: verranno copiati solo i dati essenziali.")
+        )
+        self.copy_metadata.toggled.connect(self._on_output)
+        form.addRow("Metadati", self.copy_metadata)
         self._update_output_enabled()
         return box
 
@@ -217,6 +239,29 @@ class SettingsPanel(QWidget):
         self.algo_layout.addWidget(self.algo_form)
         self.algo_box.setTitle(f"Parametri: {algorithm.label}")
         self.algo_box.setToolTip(algorithm.description)
+        self._update_neural_info()
+
+    def _update_neural_info(self) -> None:
+        algorithm = get_algorithm(self.algorithm.currentData())
+        if not algorithm.joint:
+            self.neural_info.hide()
+            return
+        from ..neural.runtime import describe_devices
+
+        spec = algorithm.spec
+        state = "scaricato" if algorithm.is_available() else f"da scaricare ({spec.size_mb} MB, una sola volta)"
+        self.neural_info.setText(f"{spec.description}<br>Modello: {state}. Licenza: {spec.license}.<br>{describe_devices()}")
+        self.neural_info.show()
+
+    def refresh_algorithms(self) -> None:
+        """Aggiorna le etichette dopo il download di un modello."""
+        labels = _algorithm_labels()
+        for i in range(self.algorithm.count()):
+            self.algorithm.setItemText(i, labels[self.algorithm.itemData(i)])
+        self._update_neural_info()
+
+    def current_algorithm(self):
+        return get_algorithm(self.algorithm.currentData())
 
     def _on_algorithm(self) -> None:
         self._rebuild_algorithm_form()
@@ -237,7 +282,7 @@ class SettingsPanel(QWidget):
 
     def _update_output_enabled(self) -> None:
         fmt = self.format.currentData()
-        self.bits.setEnabled(fmt != "jpeg")
+        self.bits.setEnabled(fmt in ("tiff", "png"))
         self.quality.setEnabled(fmt == "jpeg")
 
     def _choose_folder(self) -> None:
@@ -285,6 +330,7 @@ class SettingsPanel(QWidget):
         o.folder = self.folder.text().strip()
         o.name_template = self.name.text().strip() or "{nome}_dn"
         o.overwrite = self.overwrite.isChecked()
+        o.copy_metadata = self.copy_metadata.isChecked()
         return Settings.from_dict(s.to_dict())
 
     def set_settings(self, settings: Settings) -> None:
@@ -292,7 +338,8 @@ class SettingsPanel(QWidget):
         self._settings = Settings.from_dict(settings.to_dict())
         s = self._settings
         widgets = [self.algorithm, self.raw_stage, self.wb, self.demosaic, self.auto_bright, self.format,
-                   self.bits, self.quality, self.folder, self.name, self.overwrite, *self.wb_spins]
+                   self.bits, self.quality, self.folder, self.name, self.overwrite, self.copy_metadata,
+                   *self.wb_spins]
         for w in widgets:
             w.blockSignals(True)
         set_combo(self.algorithm, s.denoise.algorithm)
@@ -313,6 +360,7 @@ class SettingsPanel(QWidget):
         self.folder.setText(s.output.folder)
         self.name.setText(s.output.name_template)
         self.overwrite.setChecked(s.output.overwrite)
+        self.copy_metadata.setChecked(s.output.copy_metadata)
         for w in widgets:
             w.blockSignals(False)
         self._rebuild_algorithm_form()

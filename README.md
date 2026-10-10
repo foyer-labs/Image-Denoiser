@@ -45,8 +45,32 @@ un po' più alta di 1.
 | **Wavelet** | Veloce, ottimo sul colore; predefinito |
 | **Non-Local Means** | Preserva bene trame e bordi; più lento |
 | **Bilaterale** | Molto veloce; a forze alte effetto «acquerello» |
+| **DRUNet** (neurale) | Riceve il livello di rumore misurato: in genere la qualità più alta |
+| **SCUNet** (neurale) | Addestrata su rumore reale: ottima sui JPG; stima il rumore da sola |
 
 `denoiser-cli algoritmi` elenca tutti i parametri.
+
+Risultati indicativi sui test sintetici (PSNR, più alto è meglio):
+
+| | Rumoroso | Wavelet | DRUNet | SCUNet |
+|---|---|---|---|---|
+| RAW, livello 3 | 27,9 dB | 31,1 | **32,6** | 30,9 |
+| RAW, livello 2 | 27,9 dB | 29,8 | 31,0 | **32,6** |
+| JPG | 26,3 dB | 33,3 | **36,2** | 35,7 |
+
+### Modelli neurali (in locale)
+
+I modelli **non sono inclusi** nell'applicazione: alla prima scelta di DRUNet o SCUNet l'app
+propone di scaricarli dalle release ufficiali di [KAIR](https://github.com/cszn/KAIR)
+(DRUNet 125 MB, licenza MIT; SCUNet 69 MB, licenza Apache 2.0). Il file viene verificato con
+un'impronta SHA-256 e convertito in ONNX sul tuo computer; da quel momento tutto funziona offline.
+
+- I file `.pth` vengono letti senza PyTorch e senza eseguire codice contenuto nel file.
+- L'elaborazione usa la **GPU** tramite DirectML (qualsiasi scheda video su Windows) e ripiega
+  automaticamente sulla CPU se la GPU non è utilizzabile. Senza GPU le reti sono lente
+  (minuti per una foto da 24 MP).
+- Da riga di comando: `denoiser-cli modelli elenca` e `denoiser-cli modelli scarica`.
+- I modelli si trovano in `%LOCALAPPDATA%\Denoiser\modelli` (o in `DENOISER_MODELS_DIR`).
 
 ## Interfaccia grafica
 
@@ -60,12 +84,26 @@ un po' più alta di 1.
   applica le impostazioni correnti a più foto.
 - **Preset**: quelli predefiniti cambiano solo il denoise; *Salva preset…* salva tutto.
 
+## Formati di uscita e metadati
+
+- **TIFF** (8/16 bit), **PNG** (8/16 bit), **JPEG**.
+- **DNG** (solo da RAW), per continuare a lavorare in Lightroom, darktable e simili:
+  - al livello 3 contiene i **dati del sensore già ripuliti**: il programma di fotoritocco
+    esegue la propria demosaicizzazione e restano liberi bilanciamento del bianco, esposizione
+    e profili colore, come con il RAW originale;
+  - al livello 2 (o con sensori non Bayer) è un DNG lineare, con il bilanciamento del bianco
+    già applicato.
+- I **metadati** dell'originale (data, fotocamera, obiettivo, esposizione, GPS, parole chiave…)
+  vengono copiati con [ExifTool](https://exiftool.org), incluso nel pacchetto per Windows.
+  Le impostazioni di denoise usate vengono registrate nella descrizione del file.
+
 ## Riga di comando
 
 ```
 denoiser-cli elabora FOTO_O_CARTELLE... [opzioni]
 denoiser-cli analizza FOTO          # informazioni e rumore stimato
 denoiser-cli algoritmi              # algoritmi e parametri
+denoiser-cli modelli elenca | scarica [drunet|scunet|tutti]
 denoiser-cli preset elenca | salva NOME [opzioni]
 ```
 
@@ -75,6 +113,7 @@ Esempi:
 denoiser-cli elabora D:\Foto\Serata --preset "Forte (ISO alti)" --formato tiff
 denoiser-cli elabora DSC_0001.NEF --algoritmo nlm --luminanza 0.8 --colore 1.2 --param search_window=15
 denoiser-cli elabora D:\Foto --ricorsivo --formato jpeg --qualita 92 --nome "{nome}_{metodo}_{iso}"
+denoiser-cli elabora DSC_0001.NEF --algoritmo drunet --formato dng
 ```
 
 Nel nome del file di uscita si possono usare `{nome}`, `{metodo}`, `{iso}`, `{data}`.
@@ -94,13 +133,13 @@ conviene scattare con compressione «senza perdita».
 
 ## Limiti attuali
 
-- Uscita in TIFF, PNG e JPEG; l'uscita **DNG** arriverà in una fase successiva.
-- I metadati EXIF vengono copiati solo da JPG a JPG; la copia completa (anche dai RAW) con
-  ExifTool arriverà in una fase successiva. Le impostazioni usate vengono comunque registrate
-  nella descrizione del file.
 - Si assume che JPG/PNG/TIFF siano in sRGB (i profili colore incorporati non vengono convertiti).
 - Con la wavelet l'anteprima di una zona può differire leggermente dall'esportazione
   dell'intera foto (la soglia si adatta al contenuto).
+- Il DNG lineare (livello 2) ha il bilanciamento del bianco già applicato.
+- Le reti neurali sono addestrate su immagini sRGB: sui dati del sensore (livello 3) funzionano
+  molto bene nei test sintetici, ma vanno verificate su foto reali.
+- Senza ExifTool vengono copiati solo i metadati essenziali dei JPG.
 
 ## Sviluppo
 
@@ -116,10 +155,9 @@ pyinstaller packaging/denoiser.spec --noconfirm   # eseguibile (richiede ".[buil
 
 I test usano immagini sintetiche, compresi DNG Bayer generati con rumore noto
 (`tests/synthetic.py`), così da misurare oggettivamente il miglioramento (PSNR).
+Le reti ricostruite in ONNX vengono confrontate con implementazioni di riferimento numpy;
+con `DENOISER_TEST_WEIGHTS=<cartella con i .pth>` si eseguono anche i test con i pesi reali.
 
-## Prossime fasi
+## Prossimi passi
 
-1. Motore neurale locale (ONNX Runtime con DirectML/CUDA): DRUNet, poi SCUNet/NAFNet.
-2. Uscita DNG.
-3. Copia completa dei metadati con ExifTool.
-4. Taratura sui NEF reali della Nikon Z5 II.
+- Collaudo e taratura sui NEF reali della Nikon Z5 II e sui JPG reali.

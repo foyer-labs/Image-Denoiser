@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
+
 from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
@@ -54,7 +56,7 @@ class MainWindow(QMainWindow):
         self._generation = 0  # cambia a ogni nuova foto: i risultati vecchi vengono scartati
         self._preview_running = False
         self._preview_pending = False
-        self._base_running = False
+        self._declined_models: set[str] = set()
 
         self.view = SplitView()
         self.setCentralWidget(self.view)
@@ -189,9 +191,16 @@ class MainWindow(QMainWindow):
         if image.domain.value == "linear":
             sensor = f"sensore Bayer {m.cfa_pattern}" if m.cfa_pattern else "sensore non Bayer: denoise di livello 2"
             lines.append(sensor)
-            stage = "livello 3 (dati del sensore)" if uses_sensor_stage(image, self.panel.settings()) else "livello 2 (immagine sviluppata)"
+            sensor_stage = uses_sensor_stage(image, self.panel.settings())
+            stage = "livello 3 (dati del sensore)" if sensor_stage else "livello 2 (immagine sviluppata)"
             lines.append(f"Denoise: {stage}")
-        lines.append(analysis.describe())
+        if image.domain.value == "linear" and sensor_stage and image.raw_source is not None:
+            model = image.raw_source.sensor_model
+            mid = ", ".join(f"{name} {100 * float(np.sqrt(model.a[c] * 0.18 + model.b[c])) / 0.18:.1f}%"
+                            for c, name in enumerate("RGB"))
+            lines.append(f"Rumore del sensore sui grigi medi: {mid} (forza 1 = rumore misurato)")
+        else:
+            lines.append(analysis.describe())
         lines.extend(f"<i>{note}</i>" for note in m.notes)
         is_raw = image.domain.value == "linear"
         self.panel.set_image_info("<br>".join(lines), is_raw=is_raw, is_bayer=image.raw_source is not None)
@@ -224,7 +233,46 @@ class MainWindow(QMainWindow):
     def _on_settings_changed(self) -> None:
         self._save_last_settings()
         self._update_info()
+        algorithm = self.panel.current_algorithm()
+        if not algorithm.is_available() and algorithm.key not in self._declined_models:
+            self._ensure_model(self._schedule_preview)
         self._schedule_preview()
+
+    # ------------------------------------------------------------------ modelli neurali
+
+    def _ensure_model(self, then=None) -> bool:
+        """Se il modello dell'algoritmo scelto manca, propone di scaricarlo. True se è già disponibile."""
+        algorithm = self.panel.current_algorithm()
+        if algorithm.is_available():
+            return True
+        spec = algorithm.spec
+        answer = QMessageBox.question(
+            self,
+            f"Scarica {spec.label}",
+            f"Per usare {spec.label} serve scaricare il modello ({spec.size_mb} MB) dalla release "
+            f"ufficiale. Si fa una sola volta, poi funziona offline.\n\nLicenza: {spec.license}\n\nScaricarlo ora?",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            self._declined_models.add(algorithm.key)
+            return False
+        from ..neural.models import download
+
+        self._busy(f"Download di {spec.label}…")
+        task = Task(download, spec, with_progress=True)
+        task.signals.progress.connect(self._on_progress)
+
+        def done(_path) -> None:
+            self._idle()
+            self._declined_models.discard(algorithm.key)
+            self.panel.refresh_algorithms()
+            self.statusBar().showMessage(f"{spec.label} scaricato.", 6000)
+            if then is not None:
+                then()
+
+        task.signals.finished.connect(done)
+        task.signals.failed.connect(lambda msg: self._on_failed("Download non riuscito", msg))
+        self._run(task)
+        return False
 
     def _on_tone_changed(self) -> None:
         self._save_last_settings()
@@ -238,6 +286,11 @@ class MainWindow(QMainWindow):
             return
         rect = self.view.visible_image_rect()
         if rect is None:
+            return
+        algorithm = self.panel.current_algorithm()
+        if not algorithm.is_available():
+            self.view.clear_patch()
+            self.view.set_message(f"Scarica il modello {algorithm.spec.label} per vedere l'anteprima")
             return
         if rect[2] * rect[3] > PREVIEW_MAX_PIXELS:
             self.view.clear_patch()
@@ -274,7 +327,12 @@ class MainWindow(QMainWindow):
         if self._image is None or self._analysis is None:
             QMessageBox.information(self, "Esporta", "Apri prima una foto.")
             return
+        if not self._ensure_model(self._export):
+            return
         settings = self.panel.settings()
+        if settings.output.format == "dng" and self._image.domain.value != "linear":
+            QMessageBox.information(self, "Esporta", "Il formato DNG è disponibile solo per le foto RAW.")
+            return
         destination = output_path(self._image.meta, settings.output, settings.denoise.algorithm)
         if destination.exists() and not settings.output.overwrite:
             box = QMessageBox(self)
@@ -292,20 +350,25 @@ class MainWindow(QMainWindow):
         image, analysis = self._image, self._analysis
         self._busy(f"Esportazione di {destination.name}…")
 
+        notes: list[str] = []
+
         def export(progress=None):
-            return export_image(image, analysis, settings, destination, progress)
+            return export_image(image, analysis, settings, destination, progress, notes)
 
         task = Task(export, with_progress=True)
         task.signals.progress.connect(self._on_progress)
-        task.signals.finished.connect(self._on_exported)
+        task.signals.finished.connect(lambda path: self._on_exported(path, notes))
         task.signals.failed.connect(lambda msg: self._on_failed("Esportazione non riuscita", msg))
         self._run(task)
 
-    def _on_exported(self, path: Path) -> None:
+    def _on_exported(self, path: Path, notes: list[str]) -> None:
         self._idle()
-        self.statusBar().showMessage(f"Salvato: {path}", 8000)
+        extra = f" ({'; '.join(notes)})" if notes else ""
+        self.statusBar().showMessage(f"Salvato: {path}{extra}", 10000)
 
     def _batch(self) -> None:
+        if not self._ensure_model(self._batch):
+            return
         start_dir = self._qsettings.value("ultima_cartella", "")
         paths, _ = QFileDialog.getOpenFileNames(self, "Foto da elaborare", start_dir, file_dialog_filter())
         if not paths:
@@ -315,7 +378,7 @@ class MainWindow(QMainWindow):
         dialog.setWindowTitle("Elaborazione di più file")
         dialog.setWindowModality(Qt.WindowModality.WindowModal)
         dialog.setMinimumDuration(0)
-        state = {"index": 0, "errors": []}
+        state = {"index": 0, "errors": [], "notes": []}
         converter = self._dng_converter()
 
         def next_file() -> None:
@@ -326,6 +389,8 @@ class MainWindow(QMainWindow):
                 text = f"Elaborate {done} foto su {len(paths)}."
                 if state["errors"]:
                     text += "\n\nErrori:\n" + "\n".join(state["errors"][:10])
+                if state["notes"]:
+                    text += "\n\nNote:\n" + "\n".join(sorted(set(state["notes"]))[:10])
                 QMessageBox.information(self, "Elaborazione completata", text)
                 return
             dialog.setLabelText(f"{Path(paths[i]).name} ({i + 1} di {len(paths)})")
@@ -339,6 +404,8 @@ class MainWindow(QMainWindow):
             name = Path(paths[state["index"]]).name
             if failure or (result is not None and not result.ok):
                 state["errors"].append(f"{name}: {failure or result.error}")
+            elif result is not None and result.notes:
+                state["notes"].extend(f"{name}: {n}" for n in result.notes)
             state["index"] += 1
             next_file()
 

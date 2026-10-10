@@ -22,6 +22,8 @@ def _builtin() -> dict[str, Settings]:
         "Delicato": make(algorithm="wavelet", luma_strength=0.6, chroma_strength=0.9, detail=0.15),
         "Forte (ISO alti)": make(algorithm="nlm", luma_strength=1.3, chroma_strength=1.5),
         "Solo colore": make(algorithm="wavelet", luma_strength=0.0, chroma_strength=1.2),
+        "Neurale RAW (DRUNet)": make(algorithm="drunet", luma_strength=1.0, chroma_strength=1.0),
+        "Neurale JPG (SCUNet)": make(algorithm="scunet", luma_strength=1.0, chroma_strength=1.0),
     }
 
 
