@@ -13,6 +13,7 @@ from .image import Domain, ImageData
 from .io import load_image, save_image
 from .io.dng import write_bayer_dng, write_linear_dng
 from .io.formats import is_supported
+from .io.metadata import copy_metadata
 from .io.naming import output_path, unique_path
 from .pipeline import Analysis, ProgressFn, analyze, denoise_region, render, uses_sensor_stage
 from .settings import Settings
@@ -67,8 +68,22 @@ def export_image(
     settings: Settings,
     destination: Path,
     progress: ProgressFn | None = None,
+    notes: list[str] | None = None,
 ) -> Path:
-    """Elabora l'intera foto e la salva nel formato scelto."""
+    """Elabora l'intera foto, la salva nel formato scelto e copia i metadati dell'originale."""
+    path = _write_output(image, analysis, settings, destination, progress)
+    if settings.output.copy_metadata and image.meta.source.is_file():
+        if progress is not None:
+            progress(1.0, "Copia dei metadati")
+        problem = copy_metadata(image.meta.source, path)
+        if problem and notes is not None:
+            notes.append(problem)
+    return path
+
+
+def _write_output(
+    image: ImageData, analysis: Analysis, settings: Settings, destination: Path, progress: ProgressFn | None
+) -> Path:
     out = settings.output
     description = settings_description(settings)
     if out.format == "dng":
@@ -131,7 +146,7 @@ def process_file(
         if destination.exists() and not settings.output.overwrite:
             destination = unique_path(destination)
         analysis = analysis or analyze(image)
-        result.output = export_image(image, analysis, settings, destination, progress)
+        result.output = export_image(image, analysis, settings, destination, progress, result.notes)
     except Exception as exc:  # l'errore viene riportato all'utente, il batch prosegue
         result.error = str(exc) or exc.__class__.__name__
     return result

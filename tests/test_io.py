@@ -138,3 +138,26 @@ def test_bayer_dng_with_camera_matrix(tmp_path, dng_pair):
     # Pochi pixel isolati possono differire per le scelte locali della demosaicizzazione AHD.
     assert diff.mean() < 1e-3 and np.percentile(diff, 99) < 5e-3
     assert back.meta.camera == "Marca Modello"
+
+
+@pytest.mark.skipif(__import__("shutil").which("exiftool") is None, reason="ExifTool non installato")
+def test_metadata_copied_with_exiftool(tmp_path):
+    import subprocess
+
+    from denoiser.batch import process_file
+
+    src = tmp_path / "originale.jpg"
+    exif = Image.Exif()
+    exif[0x010F], exif[0x0110] = "Nikon", "Z 5_2"
+    exif.get_ifd(0x8769)[0x8827] = 6400
+    Image.fromarray((clean_display(64) * 255).astype(np.uint8)).save(src, exif=exif.tobytes())
+    subprocess.run(["exiftool", "-overwrite_original", "-q", "-XMP-dc:Title=Prova", "-GPSLatitude=45.5",
+                    "-GPSLatitudeRef=N", str(src)], check=True)
+    for fmt in ("tiff", "png", "jpeg"):
+        settings = Settings()
+        settings.output.format = fmt
+        result = process_file(src, settings)
+        assert result.ok, result.error
+        out = subprocess.run(["exiftool", "-s", "-Model", "-ISO", "-Title", "-GPSLatitude", "-Software",
+                              str(result.output)], capture_output=True, text=True).stdout
+        assert "Z 5_2" in out and "6400" in out and "Prova" in out and "45" in out and "Denoiser" in out, out

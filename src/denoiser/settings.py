@@ -85,6 +85,8 @@ class OutputSettings:
     #: Modello del nome senza estensione. Segnaposto: {nome}, {metodo}, {iso}, {data}.
     name_template: str = "{nome}_dn"
     overwrite: bool = False
+    #: Copia tutti i metadati dell'originale (EXIF, XMP, GPS…) con ExifTool.
+    copy_metadata: bool = True
 
 
 @dataclass
