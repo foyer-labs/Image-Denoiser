@@ -1,0 +1,30 @@
+name: Aggiorna la descrizione di una release
+
+# Rigenera la descrizione di una release già pubblicata (dal CHANGELOG e dal modello in
+# .github/scripts/note_di_rilascio.py), senza rifare la build né toccare i file allegati.
+on:
+  workflow_dispatch:
+    inputs:
+      versione:
+        description: "Versione della release da aggiornare (es. 0.9.1)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  note:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepara la descrizione
+        id: notes
+        env:
+          CONTROLLA_VERSIONE: "0"  # la release può essere più vecchia del codice attuale
+        run: python3 .github/scripts/note_di_rilascio.py "${{ inputs.versione }}" note.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.notes.outputs.tag }}
+          name: Denoiser ${{ steps.notes.outputs.version }}
+          body_path: note.md
+          prerelease: ${{ startsWith(steps.notes.outputs.tag, 'v0.') || contains(steps.notes.outputs.tag, '-') }}
