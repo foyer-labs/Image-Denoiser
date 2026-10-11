@@ -22,9 +22,8 @@ jobs:
         env:
           CONTROLLA_VERSIONE: "0"  # la release può essere più vecchia del codice attuale
         run: python3 .github/scripts/note_di_rilascio.py "${{ inputs.versione }}" note.md
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.notes.outputs.tag }}
-          name: Denoiser ${{ steps.notes.outputs.version }}
-          body_path: note.md
-          prerelease: ${{ startsWith(steps.notes.outputs.tag, 'v0.') || contains(steps.notes.outputs.tag, '-') }}
+      - name: Aggiorna la release
+        # Solo titolo e testo: file allegati, tag e commit restano com'erano.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${{ steps.notes.outputs.tag }}" --repo "${{ github.repository }}" --title "Denoiser ${{ steps.notes.outputs.version }}" --notes-file note.md
