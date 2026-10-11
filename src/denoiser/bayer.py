@@ -36,7 +36,6 @@ _PACKED = np.array(
     ],
     dtype=np.float32,
 )
-_SQRT_3_2 = np.sqrt(1.5)
 
 
 # ---------------------------------------------------------------- orientamento
@@ -116,11 +115,11 @@ def _stabilize(x: np.ndarray, a: float, b: float) -> np.ndarray:
 
 
 def _unstabilize(d: np.ndarray, a: float, b: float) -> np.ndarray:
+    from .vst import exact_unbiased_inverse
+
     a = max(a, 1e-7)
-    d = np.maximum(d.astype(np.float64) + 2.0 * np.sqrt(0.375 + b / a**2), 1e-3)
-    z = 0.25 * d**2 + 0.25 * _SQRT_3_2 / d - 1.375 / d**2 + 0.625 * _SQRT_3_2 / d**3 - 0.125 - b / a**2
-    z = np.where(d < 1.5, 0.25 * d**2 - 0.375 - b / a**2, z)
-    return (np.maximum(z, 0.0) * a).astype(np.float32)
+    sigma2 = b / a**2
+    return (exact_unbiased_inverse(d + np.float32(2.0 * np.sqrt(0.375 + sigma2)), sigma2) * np.float32(a)).astype(np.float32)
 
 
 def denoise_sensor_region(
@@ -140,7 +139,9 @@ def denoise_sensor_region(
     else:
         x, y, w, h = region
         pad = 2 * algorithm.margin
-        x0, y0 = max(0, x - pad) & ~1, max(0, y - pad) & ~1
+        # Origine allineata a 128 pixel del sensore (64 per piano): la scomposizione wavelet e i
+        # tasselli cadono come nella foto intera, così l'anteprima coincide con l'esportazione.
+        x0, y0 = max(0, x - pad) & ~127, max(0, y - pad) & ~127
         x1, y1 = min(full_w, x + w + pad), min(full_h, y + h + pad)
     # Dimensioni pari, così ogni piano ha la stessa forma.
     x1 -= (x1 - x0) % 2
@@ -166,7 +167,7 @@ def denoise_sensor_region(
     if algorithm.joint:
         stacked = _joint_sensor_denoise(stacked, model, layout, algorithm, settings, progress)
     else:
-        stacked = _packed_denoise(stacked, weights, algorithm, settings, progress)
+        stacked = _packed_denoise(stacked, weights, algorithm, settings, progress, min(full_h, full_w) // 2)
     stacked = stacked / weights
 
     for k, ((i, j, black), c) in enumerate(zip(layout.planes, layout.rgb)):
@@ -181,9 +182,14 @@ def _packed_denoise(
     algorithm: Denoiser,
     settings: DenoiseSettings,
     progress: Callable[[float, str], None] | None,
+    full_size: int | None = None,
 ) -> np.ndarray:
-    """Algoritmi classici: componenti ortonormali dei quattro piani, ripulite una alla volta."""
+    """Algoritmi classici: componenti ortonormali dei quattro piani, ripulite una alla volta.
+
+    ``full_size``: lato minore dei piani interi (scelte automatiche uguali in anteprima ed esportazione).
+    """
     comps = stacked @ _PACKED.T
+    params = dict(settings.params, _full_size=full_size) if full_size else settings.params
     # Rumore di ogni componente: i piani pesati hanno rumore w_k (indipendente tra i piani).
     sigmas = np.sqrt((_PACKED.astype(np.float64) ** 2) @ (weights.astype(np.float64) ** 2))
     strengths = (settings.luma_strength, settings.chroma_strength, settings.chroma_strength, settings.chroma_strength)
@@ -194,7 +200,7 @@ def _packed_denoise(
         if strength <= 0:
             continue
         original = np.ascontiguousarray(comps[..., k])
-        cleaned = algorithm.denoise(original, float(strength * sigmas[k]), settings.params)
+        cleaned = algorithm.denoise(original, float(strength * sigmas[k]), params)
         if k == 0 and settings.detail > 0:
             cleaned = cleaned + settings.detail * (original - cleaned)
         comps[..., k] = cleaned
@@ -254,13 +260,26 @@ def _joint_sensor_denoise(
 
 
 def _remove_hot_pixels(stacked: np.ndarray, threshold: float) -> np.ndarray:
-    """Nel dominio stabilizzato il rumore vale 1: un pixel isolato oltre la soglia è un pixel caldo."""
+    """Nel dominio stabilizzato il rumore vale 1: un pixel isolato oltre la soglia è un pixel caldo.
+
+    Un pixel caldo è un singolo fotosito: i piani vicini non ne risentono. Una stella o un riflesso
+    puntiforme, invece, illumina anche i fotositi accanto degli altri colori: se negli altri piani
+    l'intorno è anch'esso più chiaro, il punto è vero e si conserva.
+    """
     out = stacked.copy()
+    kernel = np.ones((3, 3), np.uint8)
+    excess, medians = [], []
     for k in range(stacked.shape[-1]):
         plane = np.ascontiguousarray(stacked[..., k])
         med = cv2.medianBlur(plane, 3)
-        hot = (plane - med) > threshold
-        out[..., k] = np.where(hot, med, plane)
+        excess.append(plane - med)
+        medians.append(med)
+    spread = [cv2.dilate(e, kernel) for e in excess]
+    limit = max(3.0, threshold / 3.0)
+    for k in range(stacked.shape[-1]):
+        others = np.max([spread[j] for j in range(len(excess)) if j != k], axis=0)
+        hot = (excess[k] > threshold) & (others < limit)
+        out[..., k] = np.where(hot, medians[k], stacked[..., k])
     return out
 
 

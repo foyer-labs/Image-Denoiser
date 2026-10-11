@@ -514,6 +514,9 @@ class SettingsPanel(QWidget):
             self.stage_hint.setText("Non applicabile: la foto non è un RAW.")
         elif not is_bayer:
             self.stage_hint.setText("Questo sensore (es. Fujifilm X-Trans) usa sempre «Dopo lo sviluppo».")
+        elif self.raw_stage.currentData() == "rgb":
+            self.stage_hint.setText("Attenzione: dopo lo sviluppo il risultato è in genere peggiore, soprattutto nelle "
+                                    "ombre profonde. Usalo solo per confronto.")
         else:
             self.stage_hint.setText("")
         self.stage_hint.setVisible(bool(self.stage_hint.text()))

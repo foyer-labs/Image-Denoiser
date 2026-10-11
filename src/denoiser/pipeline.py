@@ -119,21 +119,40 @@ def denoise_region(
         return _render_sensor_stage(image, settings, region, progress)
 
     margin = algorithm.margin if denoise else 0
-    px0, py0 = max(0, x - margin), max(0, y - margin)
+    # Origine della zona allineata a 64: la scomposizione wavelet e i tasselli delle reti cadono
+    # sugli stessi punti della foto intera, così l'anteprima coincide con l'esportazione.
+    px0, py0 = (max(0, x - margin) // 64) * 64, (max(0, y - margin) // 64) * 64
     px1, py1 = min(image.width, x + w + margin), min(image.height, y + h + margin)
-    work = image.pixels[py0:py1, px0:px1].copy()
+    if denoise and ds.hot_pixel_threshold > 0 and image.raw_source is not None:
+        # RAW Bayer: i pixel caldi si tolgono sui dati del sensore (un fotosito alla volta), dove si
+        # distinguono dalle stelle; dopo lo sviluppo sono macchioline colorate difficili da separare.
+        hot_only = Settings.from_dict(settings.to_dict())
+        hot_only.denoise.luma_strength = hot_only.denoise.chroma_strength = 0.0
+        work = _render_sensor_stage(image, hot_only, (px0, py0, px1 - px0, py1 - py0), progress)
+        rgb_settings = Settings.from_dict(settings.to_dict())
+        rgb_settings.denoise.hot_pixel_threshold = 0.0
+    else:
+        work = image.pixels[py0:py1, px0:px1].copy()
+        rgb_settings = settings
     if denoise and active:
-        work = _denoise_rgb_stage(work, analysis, settings, algorithm, progress)
+        work = _denoise_rgb_stage(work, analysis, rgb_settings, algorithm, progress,
+                                  full_size=min(image.width, image.height))
     if progress is not None:
         progress(1.0, "Completato")
     return np.ascontiguousarray(work[y - py0 : y - py0 + h, x - px0 : x - px0 + w])
 
 
 def _denoise_rgb_stage(
-    work: np.ndarray, analysis: Analysis, settings: Settings, algorithm, progress: ProgressFn | None
+    work: np.ndarray, analysis: Analysis, settings: Settings, algorithm, progress: ProgressFn | None,
+    full_size: int | None = None,
 ) -> np.ndarray:
-    """Livello 2 (RAW sviluppati) e immagini già codificate (JPG, PNG, TIFF)."""
+    """Livello 2 (RAW sviluppati) e immagini già codificate (JPG, PNG, TIFF).
+
+    ``full_size``: lato minore della foto intera, perché le scelte automatiche (es. livelli wavelet)
+    siano le stesse in anteprima (una zona) e in esportazione.
+    """
     ds = settings.denoise
+    params = dict(ds.params, _full_size=full_size) if full_size else ds.params
     if ds.hot_pixel_threshold > 0:
         if progress is not None:
             progress(0.0, "Pixel caldi")
@@ -155,7 +174,7 @@ def _denoise_rgb_stage(
             if strength <= 0:
                 continue
             original = opp[..., i].copy()
-            cleaned = algorithm.denoise(original, float(analysis.component_sigma[i] * strength), ds.params)
+            cleaned = algorithm.denoise(original, float(analysis.component_sigma[i] * strength), params)
             if i == 0 and ds.detail > 0:
                 cleaned = cleaned + ds.detail * (original - cleaned)
             opp[..., i] = cleaned

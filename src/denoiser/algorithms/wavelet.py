@@ -55,9 +55,10 @@ class WaveletDenoiser(Denoiser):
             "con valori alti l'anteprima di una zona può differire un po' dalla foto esportata.",
         ),
         Param(
-            "cycle_spin", "Passaggi anti-quadrettatura", "int", 1, 0, 3, 1,
+            "cycle_spin", "Passaggi anti-quadrettatura", "int", 1, 0, 1, 1,
             tooltip="Ripete il calcolo spostando di poco la foto e fa la media, per eliminare piccoli artefatti "
-            "a blocchi. Tempo: 0 = ×1, 1 = ×4 (consigliato), 2 = ×9, 3 = ×16.",
+            "a blocchi. 0 = più veloce, 1 = qualità migliore (consigliato, circa 4 volte il tempo). "
+            "Più passaggi non migliorano il risultato.",
         ),
     )
     margin = 64
@@ -69,11 +70,15 @@ class WaveletDenoiser(Denoiser):
         if sigma_unit <= 0:
             return channel.copy()
 
-        levels = p["levels"] or None
-        if levels is not None:
-            # Su immagini piccole (es. anteprime) i livelli possibili sono meno.
-            max_levels = pywt.dwt_max_level(min(unit.shape), pywt.Wavelet(p["wavelet"]).dec_len)
-            levels = max(1, min(levels, max_levels))
+        dec_len = pywt.Wavelet(p["wavelet"]).dec_len
+        levels = p["levels"]
+        if not levels:
+            # Automatico: come skimage (massimo - 3), ma calcolato sulla foto intera e non sulla zona
+            # in anteprima, altrimenti anteprima ed esportazione userebbero livelli diversi.
+            full = int(params.get("_full_size") or min(unit.shape))
+            levels = max(1, pywt.dwt_max_level(full, dec_len) - 3)
+        # Su immagini piccole (es. anteprime) i livelli possibili sono meno.
+        levels = max(1, min(levels, pywt.dwt_max_level(min(unit.shape), dec_len)))
 
         def run(x: np.ndarray) -> np.ndarray:
             return denoise_wavelet(

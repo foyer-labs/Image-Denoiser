@@ -30,8 +30,15 @@ def joint_denoise(
     out = original.copy()
     if algorithm.blind:
         cleaned = rgb_to_opponent(algorithm.denoise_rgb(rgb, 0.0, settings.params, progress))
+        residual = cleaned - original
         weights = np.array([min(ls, 1.0), min(cs, 1.0), min(cs, 1.0)], dtype=np.float32)
-        out = original + (cleaned - original) * weights
+        # Una rete «cieca» non sa quanto rumore c'è: se toglie molto più del rumore misurato sta
+        # cambiando anche toni e colori. La miscela si limita così che il tolto non superi il rumore.
+        for k in range(3):
+            spread = float(np.std(residual[..., k]))
+            if spread > 0 and component_sigma[k] > 0:
+                weights[k] = min(weights[k], float(component_sigma[k]) / spread)
+        out = original + residual * weights
     else:
         # Il livello di rumore passato alla rete è quello della componente da ripulire: dopo la
         # demosaicizzazione il rumore è correlato tra i canali e pesa soprattutto sulla luminanza.

@@ -30,7 +30,8 @@ from .color import rgb_to_opponent
 from .noise import (
     NoiseModel,
     NoiseProfile,
-    estimate_channel_model,
+    channel_variance_bins,
+    fit_lower_envelope,
     fit_model_from_noise,
     robust_std,
     sample_tiles,
@@ -45,11 +46,16 @@ def estimate_sensor_model(raw: rawpy.RawPy, max_pixels: int = 4_000_000) -> Nois
         span = max(layout.white - black, 1.0)
         plane = (visible[i::2, j::2].astype(np.float32) - black) / span
         tiles_per_rgb[c].extend(sample_tiles(plane, max_pixels // 4))
-    a = np.zeros(3)
-    b = np.zeros(3)
-    for c in range(3):
-        a[c], b[c] = estimate_channel_model(tiles_per_rgb[c])
-    return NoiseModel(a=a, b=b)
+    # Sui dati grezzi il guadagno (fotoni per unità) e il rumore di lettura sono gli stessi per i tre
+    # colori: un solo modello stimato su tutti i piani è molto più robusto di tre stime separate.
+    bins = [channel_variance_bins(tiles_per_rgb[c]) for c in range(3)]
+    levels = np.concatenate([x[0] for x in bins])
+    variances = np.concatenate([x[1] for x in bins])
+    weights = np.concatenate([x[2] for x in bins])
+    if levels.size == 0:
+        return NoiseModel(a=np.zeros(3), b=np.full(3, 1e-8))
+    a, b = fit_lower_envelope(levels, variances, weights)
+    return NoiseModel(a=np.full(3, a), b=np.full(3, b))
 
 
 #: Rapporto tra la varianza misurata dal gemello e quella vera, per algoritmo di demosaicizzazione

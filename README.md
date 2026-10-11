@@ -128,6 +128,13 @@ Le scorciatoie sono sempre in vista: ogni pulsante della barra in alto mostra il
 - I **metadati** dell'originale (data, fotocamera, obiettivo, esposizione, GPS, parole chiave…)
   vengono copiati con [ExifTool](https://exiftool.org), incluso nel pacchetto per Windows.
   Le impostazioni di denoise usate vengono registrate nella descrizione del file.
+- Il **profilo colore** (ICC) dell'originale viene conservato (es. Display P3 degli smartphone,
+  Adobe RGB); le uscite da RAW dichiarano sRGB. Il DNG ripulito mantiene l'esposizione di base
+  del DNG d'origine.
+- Il salvataggio passa da un file temporaneo: un'esportazione interrotta non lascia file a metà,
+  e il file d'origine non viene mai sovrascritto.
+- Gli errori imprevisti dell'interfaccia vengono mostrati e registrati in
+  `%LOCALAPPDATA%\Denoiser\errori.log`.
 
 ## Riga di comando
 

@@ -35,7 +35,12 @@ class Param:
         if self.kind == "choice":
             value = str(value)
             return value if self.choices and value in self.choices else self.default
-        num = float(value)
+        try:
+            num = float(str(value).replace(",", ".")) if isinstance(value, str) else float(value)
+        except (TypeError, ValueError):
+            return self.default  # es. un preset scritto a mano con un valore non numerico
+        if num != num:  # NaN
+            return self.default
         if self.minimum is not None:
             num = max(num, self.minimum)
         if self.maximum is not None:

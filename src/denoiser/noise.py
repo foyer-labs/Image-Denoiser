@@ -106,18 +106,26 @@ def estimate_noise_model(linear: np.ndarray, max_pixels: int = 4_000_000) -> Noi
     return NoiseModel(a=a, b=b)
 
 
-def estimate_channel_model(tiles: list[np.ndarray], n_bins: int = 16) -> tuple[float, float]:
-    """Stima (a, b) di var = a * x + b su un canale, osservando le zone uniformi a vari livelli."""
+def channel_variance_bins(tiles: list[np.ndarray], n_bins: int = 20) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Varianza del rumore misurata nelle zone più uniformi, per fasce di luminosità.
+
+    Restituisce (livelli, varianze, pesi). Le trame dell'immagine possono solo gonfiare la
+    varianza: per questo si usano le zone con meno attività e fasce più strette al buio, dove
+    poche trame bastano a falsare la stima.
+    """
     resids, means, acts = [], [], []
     for t in tiles:
         if min(t.shape[:2]) < 8:
             continue
         r, m, act = _residual_and_activity(t)
-        resids.append(r.ravel())
-        means.append(m.ravel())
-        acts.append(act.ravel())
-    if not resids:
-        return 0.0, 1e-8
+        # Vicino alle alte luci tagliate (saturazione) i residui sono falsati dal taglio: esclusi.
+        near_clip = cv2.dilate((t >= 0.97).astype(np.uint8), np.ones((7, 7), np.uint8))[3:-3, 3:-3] > 0
+        keep = ~near_clip
+        resids.append(r[keep])
+        means.append(m[keep])
+        acts.append(act[keep])
+    if not resids or not sum(x.size for x in resids):
+        return np.zeros(0), np.zeros(0), np.zeros(0)
     r = np.concatenate(resids)
     m = np.concatenate(means)
     act = np.concatenate(acts)
@@ -127,22 +135,52 @@ def estimate_channel_model(tiles: list[np.ndarray], n_bins: int = 16) -> tuple[f
         valid = np.ones_like(m, dtype=bool)
     r, m, act = r[valid], m[valid], act[valid]
 
-    edges = np.unique(np.quantile(m, np.linspace(0, 1, n_bins + 1)))
+    # Fasce più fitte al buio (quantili spaziati con legge quadratica).
+    edges = np.unique(np.quantile(m, np.linspace(0, 1, n_bins + 1) ** 1.5))
     levels, variances, weights = [], [], []
     for lo, hi in zip(edges[:-1], edges[1:]):
         sel = (m >= lo) & (m <= hi)
-        if sel.sum() < 200:
+        if sel.sum() < 400:
             continue
         act_sel = act[sel]
-        flat = act_sel <= np.percentile(act_sel, 30)
+        flat = act_sel <= np.percentile(act_sel, 15)
         rs = r[sel][flat]
-        if rs.size < 50:
+        if rs.size < 60:
             continue
         sigma = _MAD_TO_SIGMA * np.median(np.abs(rs))
         levels.append(float(np.median(m[sel][flat])))
         variances.append(float(sigma**2))
         weights.append(float(rs.size))
-    return _fit_linear_variance(np.array(levels), np.array(variances), np.array(weights))
+    return np.array(levels), np.array(variances), np.array(weights)
+
+
+def fit_lower_envelope(levels: np.ndarray, variances: np.ndarray, weights: np.ndarray) -> tuple[float, float]:
+    """Retta var = a·x + b che segue il basso dei punti: le fasce gonfiate dalle trame vengono escluse."""
+    a, b = _fit_linear_variance(levels, variances, weights)
+    keep = np.ones(levels.size, dtype=bool)
+    for _ in range(4):
+        predicted = a * levels + b
+        new_keep = variances <= 1.25 * predicted + 1e-12
+        if new_keep.sum() < 3 or np.array_equal(new_keep, keep):
+            break
+        keep = new_keep
+        a, b = _fit_linear_variance(levels[keep], variances[keep], weights[keep])
+    if levels.size:
+        # b (rumore di lettura) si vede nelle fasce più scure: se la retta lo sottostima (le fasce
+        # scure escluse come «gonfiate») lo si riprende da lì, prendendo la più bassa delle tre per
+        # non farsi ingannare da eventuali trame; e non può superare la varianza misurata al buio.
+        darkest = np.argsort(levels)[:3]
+        b = max(b, float(np.min(variances[darkest] - a * levels[darkest])))
+        b = min(b, float(np.min(variances[darkest[:2]])))
+    return float(a), float(max(b, 1e-12))
+
+
+def estimate_channel_model(tiles: list[np.ndarray], n_bins: int = 20) -> tuple[float, float]:
+    """Stima (a, b) di var = a * x + b su un canale, osservando le zone uniformi a vari livelli."""
+    levels, variances, weights = channel_variance_bins(tiles, n_bins)
+    if levels.size == 0:
+        return 0.0, 1e-8
+    return fit_lower_envelope(levels, variances, weights)
 
 
 def fit_model_from_noise(levels: np.ndarray, noise: np.ndarray, n_bins: int = 24) -> tuple[float, float]:

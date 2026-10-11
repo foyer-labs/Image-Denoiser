@@ -11,6 +11,8 @@ from .base import Denoiser, Param
 ProgressFn = Callable[[float, str], None]
 
 _OVERLAP = 32
+#: SCUNet: sovrapposizione minore (16) a parità di qualità (−0,005 dB) e un quarto di tasselli in meno.
+_SCUNET_OVERLAP = 16
 
 
 class NeuralDenoiser(Denoiser):
@@ -44,7 +46,7 @@ class NeuralDenoiser(Denoiser):
         """``rgb``: (H, W, 3) con valori circa in [0, 1]; ``sigma``: rumore in quelle unità."""
         from ..neural.models import ensure_onnx
         from ..neural.runtime import get_session
-        from ..neural.tiling import run_tiled
+        from ..neural.tiling import adaptive_tile, run_tiled
 
         p = self.resolve(params)
         tile = int(p["tile"])
@@ -61,7 +63,15 @@ class NeuralDenoiser(Denoiser):
             def run(t: np.ndarray) -> np.ndarray:
                 return session(t[None])[0]
 
-        out = run_tiled(run, chw, tile, _OVERLAP, progress, label=self.label)
+        if self.spec.noise_level_input:
+            # DRUNet accetta qualsiasi misura (multipla di 8): tasselli adattati alla foto, così non si
+            # ricalcolano pixel inutili (fino a metà del lavoro con tasselli fissi).
+            m = self.spec.multiple
+            shape = (adaptive_tile(chw.shape[1], tile, _OVERLAP, m), adaptive_tile(chw.shape[2], tile, _OVERLAP, m))
+            out = run_tiled(run, chw, shape, _OVERLAP, progress, label=self.label)
+        else:
+            # SCUNet ha finestre di attenzione fisse: tasselli quadrati della misura del modello.
+            out = run_tiled(run, chw, tile, _SCUNET_OVERLAP, progress, label=self.label)
         return np.ascontiguousarray(out.transpose(1, 2, 0))
 
 
