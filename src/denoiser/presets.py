@@ -50,10 +50,14 @@ BUILTIN_PRESETS: dict[str, tuple[str, dict[str, Any]]] = {
     ),
     "Neurale molto pulito (Restormer)": (
         "Intelligenza artificiale addestrata su rumore reale: risultato molto pulito. Lenta senza scheda video.",
-        {"denoise": {"algorithm": "restormer", "luma_strength": 1.0, "chroma_strength": 1.0, "detail": 0.0,
-                     "raw_stage": "rgb"}},
+        {"denoise": {"algorithm": "restormer", "luma_strength": 1.0, "chroma_strength": 1.0, "detail": 0.0}},
     ),
 }
+
+# Ogni preset predefinito riporta i RAW a «Prima dello sviluppo»: è la fase consigliata per tutti i metodi
+# (dopo lo sviluppo il rumore è correlato tra pixel vicini e DRUNet, per esempio, ne toglie poco).
+for _description, _content in BUILTIN_PRESETS.values():
+    _content["denoise"].setdefault("raw_stage", "sensor")
 
 #: Sezioni che un preset dell'utente può contenere, con etichetta italiana.
 SECTIONS = {"denoise": "Riduzione del rumore", "develop": "Sviluppo RAW", "tone": "Luminosità", "output": "Salvataggio"}

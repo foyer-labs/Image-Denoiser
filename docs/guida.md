@@ -126,7 +126,11 @@ DRUNet, SCUNet, Restormer e RawNIND sono reti neurali che girano interamente sul
   su RAW veri di reflex e mirrorless, conserva più dettaglio e un aspetto più naturale, lasciando un
   filo di grana nelle ombre; è veloce anche senza scheda video. **Restormer** dà un risultato molto
   pulito ma tende ad ammorbidire i dettagli finissimi ed è lenta: senza scheda video può richiedere
-  molti minuti per foto. Con i RAW rende meglio con *Quando ridurre* su «Dopo lo sviluppo». **SCUNet** resta indicata per JPG e smartphone.
+  molti minuti per foto.
+- Con i RAW Bayer lascia *Quando ridurre* su «Prima dello sviluppo» con qualsiasi metodo: dopo lo
+  sviluppo il rumore è «a macchie» (correlato tra pixel vicini) e DRUNet, in particolare, ne toglie
+  poco. «Dopo lo sviluppo» serve per i sensori non Bayer (per esempio Fujifilm X-Trans), dove è
+  l'unica possibilità. Ogni preset predefinito riporta questa impostazione su «Prima dello sviluppo». **SCUNet** resta indicata per JPG e smartphone.
 
 ## Sviluppo dei RAW
 

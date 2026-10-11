@@ -137,8 +137,7 @@ class RestormerDenoiser(NeuralDenoiser):
     description = (
         "Intelligenza artificiale addestrata su rumore reale: stima il rumore da sola e dà un risultato "
         "molto pulito, a volte un po' morbido sui dettagli finissimi. È più lenta di DRUNet: conviene "
-        "con una scheda video. Con i RAW rende meglio con «Quando ridurre» su «Dopo lo sviluppo». "
-        "«Grana» e «Macchie di colore» decidono quanto del risultato usare."
+        "con una scheda video. «Grana» e «Macchie di colore» decidono quanto del risultato usare."
     )
     params = (
         _DEVICE,

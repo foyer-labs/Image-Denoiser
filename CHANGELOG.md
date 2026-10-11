@@ -5,6 +5,15 @@ Tutte le modifiche rilevanti, dalla più recente. Formato ispirato a
 
 ## [Non rilasciato]
 
+## [0.11.1] - 2026-10-11
+
+### Corretto
+
+- Dopo aver scelto Restormer (con il suo preset o seguendo il consiglio nella descrizione), *Quando
+  ridurre* restava su «Dopo lo sviluppo» anche tornando a DRUNet o agli altri metodi: con i RAW
+  DRUNet sembrava non avere quasi effetto. Restormer ora resta «Prima dello sviluppo», dove sulle foto
+  vere rende bene, e ogni preset predefinito riporta i RAW su «Prima dello sviluppo».
+
 ## [0.11.0] - 2026-10-11
 
 ### Aggiunto
@@ -124,7 +133,8 @@ Codice distribuito con licenza MIT.
 - Correzioni di memoria, concorrenza, cache e gestione degli errori; registro degli errori in
   `%LOCALAPPDATA%\Denoiser\errori.log`.
 
-[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.0...HEAD
+[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.3...v0.10.0

@@ -67,7 +67,9 @@ def test_builtin_preset_changes_only_declared_fields():
     _, content = BUILTIN_PRESETS["Forte (ISO alti)"]
     result = apply_preset(current, content)
     assert result.denoise.algorithm == "nlm"
-    assert result.denoise.raw_stage == "rgb" and result.denoise.hot_pixel_threshold == 8
+    assert result.denoise.hot_pixel_threshold == 8
+    # La fase per i RAW torna quella consigliata: un preset non deve lasciare DRUNet «dopo lo sviluppo».
+    assert result.denoise.raw_stage == "sensor"
     assert result.output.format == "jpeg"
 
 
