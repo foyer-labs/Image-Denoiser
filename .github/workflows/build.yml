@@ -151,7 +151,7 @@ jobs:
           name: Denoiser ${{ steps.notes.outputs.version }}
           body_path: note.md
           # Le versioni 0.x sono anteprime: diventeranno definitive dopo il collaudo sulle foto reali.
-          prerelease: ${{ startsWith(steps.notes.outputs.tag, 'v0.') || contains(steps.notes.outputs.tag, '-') }}
+          prerelease: ${{ contains(steps.notes.outputs.tag, '-') }}
           files: |
             Denoiser-windows-${{ steps.notes.outputs.version }}.zip
             Denoiser-windows-${{ steps.notes.outputs.version }}.zip.sha256

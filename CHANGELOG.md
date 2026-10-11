@@ -2,7 +2,6 @@
 
 Tutte le modifiche rilevanti, dalla più recente. Formato ispirato a
 [Keep a Changelog](https://keepachangelog.com/it/1.1.0/); numerazione [SemVer](https://semver.org/lang/it/).
-Le versioni 0.x sono anteprime: la 1.0 arriverà dopo il collaudo sulle foto reali.
 
 ## [Non rilasciato]
 

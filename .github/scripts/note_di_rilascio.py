@@ -40,15 +40,14 @@ def main() -> None:
     zip_name = f"Denoiser-windows-{version}.zip"
     blob = f"{SERVER}/{REPO}/blob/{tag}"
     raw = f"https://raw.githubusercontent.com/{REPO}/{tag}"
-    preview = version.startswith("0.") or "-" in version
+    preview = "-" in version  # es. 1.0.0-rc1
     parts = [
         "**Denoiser** toglie il rumore dalle foto **RAW, JPG, PNG e TIFF** interamente sul tuo computer: "
         "nessun abbonamento, nessun caricamento nel cloud. Interfaccia in italiano per Windows 10 e 11.",
     ]
     if preview:
         parts.append(
-            "> [!NOTE]\n> Versione di **anteprima**: l'applicazione è completa e collaudata con test automatici e "
-            "immagini sintetiche; la 1.0 arriverà dopo il collaudo su foto RAW reali. Segnalazioni e proposte nelle "
+            "> [!NOTE]\n> Versione di **prova**, in vista della prossima versione definitiva. Segnalazioni e proposte nelle "
             f"[Issues]({SERVER}/{REPO}/issues)."
         )
     parts += [

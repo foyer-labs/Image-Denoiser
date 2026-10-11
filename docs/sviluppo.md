@@ -101,11 +101,11 @@ Il job *release* controlla che il tag corrisponda alla versione del codice e scr
 della release con [`.github/scripts/note_di_rilascio.py`](../.github/scripts/note_di_rilascio.py):
 presentazione, schermata, novità dalla sezione del CHANGELOG, installazione, requisiti, verifica del
 download e collegamenti alla documentazione. Poi crea la release su GitHub con `Denoiser-windows-X.Y.Z.zip` e la sua
-impronta SHA-256. Le versioni `0.x` e quelle con un trattino (es. `1.0.0-rc1`) vengono segnate
-come *pre-release*.
+impronta SHA-256. Solo le versioni con un trattino (es. `1.0.0-rc1`) vengono segnate come
+*pre-release*.
 
 Per correggere la descrizione di una release già pubblicata (es. dopo aver ritoccato il CHANGELOG o il
-modello delle note) senza rifare la build: *Actions → Aggiorna la descrizione di una release →
+modello delle note) senza rifare la build, o per aggiornarne il segno di *pre-release*: *Actions → Aggiorna la descrizione di una release →
 Run workflow*, indicando la versione.
 
 ## Schermate della documentazione

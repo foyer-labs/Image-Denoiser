@@ -23,7 +23,10 @@ jobs:
           CONTROLLA_VERSIONE: "0"  # la release può essere più vecchia del codice attuale
         run: python3 .github/scripts/note_di_rilascio.py "${{ inputs.versione }}" note.md
       - name: Aggiorna la release
-        # Solo titolo e testo: file allegati, tag e commit restano com'erano.
+        # Titolo, testo e segno di pre-release: file allegati, tag e commit restano com'erano.
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "${{ steps.notes.outputs.tag }}" --repo "${{ github.repository }}" --title "Denoiser ${{ steps.notes.outputs.version }}" --notes-file note.md
+        run: >-
+          gh release edit "${{ steps.notes.outputs.tag }}" --repo "${{ github.repository }}"
+          --title "Denoiser ${{ steps.notes.outputs.version }}" --notes-file note.md
+          --prerelease=${{ contains(steps.notes.outputs.tag, '-') }}
