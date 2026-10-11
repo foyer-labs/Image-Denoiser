@@ -33,7 +33,7 @@ def render_name(template: str, meta: ImageMeta, method: str) -> str:
     )
     try:
         name = template.format_map(values)
-    except (ValueError, IndexError):
+    except (ValueError, IndexError, AttributeError, KeyError, TypeError):  # es. «{nome.x}», «{0}»
         name = template
     name = _INVALID.sub("_", name).strip(" .")
     return name or meta.source.stem

@@ -28,7 +28,7 @@ from ..io import load_image
 from ..io.formats import file_dialog_filter, is_supported
 from ..io.naming import output_path, unique_path
 from ..pipeline import analyze
-from ..presets import apply_preset, list_presets, preset_content
+from ..presets import PresetError, apply_preset, list_presets, preset_content
 from ..settings import Settings
 from .widgets import hint_label
 from .workers import EtaEstimator, Task, format_duration, start
@@ -36,11 +36,18 @@ from .workers import EtaEstimator, Task, format_duration, start
 POLICIES = {"rename": "Salva con un altro nome (_1, _2…)", "overwrite": "Sovrascrivi", "skip": "Salta la foto"}
 
 
-def process_one(path: Path, settings: Settings, policy: str, converter, use_converter: bool, progress=None) -> tuple[str, Path | None, list[str]]:
-    """Elabora una foto. Restituisce (esito, file salvato, note); esito: "ok" o "saltata"."""
+def process_one(path: Path, settings: Settings, policy: str, converter, use_converter: bool, progress=None,
+                taken: frozenset[Path] = frozenset()) -> tuple[str, Path | None, list[str]]:
+    """Elabora una foto. Restituisce (esito, file salvato, note); esito: "ok" o "saltata".
+
+    ``taken``: file già prodotti in questo stesso batch (es. IMG_1.NEF e IMG_1.JPG danno lo stesso
+    nome): non vengono mai sovrascritti né fanno saltare la foto, si usa un nome nuovo.
+    """
     image = load_image(path, settings.develop, use_converter, converter)
     destination = output_path(image.meta, settings.output, settings.denoise.algorithm)
-    if destination.exists():
+    if destination in taken:
+        destination = unique_path(destination)
+    elif destination.exists():
         if policy == "skip":
             return "saltata", destination, []
         if policy == "rename":
@@ -67,6 +74,8 @@ class BatchDialog(QDialog):
         self._outputs: list[Path] = []
         self._eta = EtaEstimator()
         self._started = 0.0
+        self._closed = False
+        self._preset_problem = ""
 
         v = QVBoxLayout(self)
         v.addWidget(QLabel("<b>Foto da elaborare</b>"))
@@ -144,7 +153,7 @@ class BatchDialog(QDialog):
 
     def _add_paths(self, paths: list[Path]) -> None:
         present = {self.files.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.files.count())}
-        for p in collect_inputs(paths, self.recursive.isChecked()):
+        for p in collect_inputs(paths, self.recursive.isChecked(), self._settings().output.folder):
             if str(p) not in present and is_supported(p):
                 self.files.addItem(p.name if p.parent == Path(self._start_dir or ".") else str(p))
                 self.files.item(self.files.count() - 1).setData(Qt.ItemDataRole.UserRole, str(p))
@@ -166,21 +175,31 @@ class BatchDialog(QDialog):
         self._update_summary()
 
     def _settings(self) -> Settings:
+        """Impostazioni da usare; se il preset scelto non è più leggibile si usano quelle attuali."""
         settings = self._current_settings()
         name = self.preset.currentData()
+        self._preset_problem = ""
         if name:
-            settings = apply_preset(settings, preset_content(list_presets()[name][1]))
+            try:
+                settings = apply_preset(settings, preset_content(list_presets()[name][1]))
+            except (KeyError, PresetError, OSError, ValueError) as exc:
+                self._preset_problem = f"Preset «{name}» non leggibile ({exc}): verranno usate le impostazioni attuali."
         return settings
 
     def _update_summary(self) -> None:
         s = self._settings()
         count = self.files.count()
         folder = s.output.folder or "stessa cartella della foto"
-        self.summary.setText(
-            f"{count} foto · metodo {get_algorithm(s.denoise.algorithm).label} · formato {s.output.format.upper()} · "
-            f"cartella «{folder}» · nome «{s.output.name_template}»"
-        )
-        self.start_button.setEnabled(count > 0 and self._task is None)
+        algorithm = get_algorithm(s.denoise.algorithm)
+        text = (f"{count} foto · metodo {algorithm.label} · formato {s.output.format.upper()} · "
+                f"cartella «{folder}» · nome «{s.output.name_template}»")
+        if not algorithm.is_available():
+            text += f"<br><span style='color:#e0b050'>{algorithm.label} non è ancora scaricato: scaricalo dal pannello " \
+                    "della finestra principale prima di avviare.</span>"
+        if self._preset_problem:
+            text += f"<br><span style='color:#e0b050'>{self._preset_problem}</span>"
+        self.summary.setText(text)
+        self.start_button.setEnabled(count > 0 and self._task is None and algorithm.is_available())
 
     # ------------------------------------------------------------------ esecuzione
 
@@ -212,7 +231,7 @@ class BatchDialog(QDialog):
         self.current.setValue(0)
         self._eta.reset()
         task = Task(process_one, path, self._run_settings, self._policy, self._converter, self._use_converter,
-                    with_progress=True)
+                    with_progress=True, taken=frozenset(self._outputs))
         task.signals.progress.connect(self._on_progress)
         task.signals.finished.connect(lambda res, p=path: self._done(p, res))
         task.signals.failed.connect(lambda msg, _d, p=path: self._done(p, ("errore", None, [msg])))
@@ -230,6 +249,8 @@ class BatchDialog(QDialog):
         self.status.setText(f"{self._queue[self._index].name} ({self._index + 1} di {len(self._queue)}): {message}{eta}")
 
     def _done(self, path: Path, result) -> None:
+        if self._closed:
+            return
         outcome, saved, notes = result
         if outcome == "ok" and saved is not None:
             self._outputs.append(saved)
@@ -240,6 +261,8 @@ class BatchDialog(QDialog):
         self._next()
 
     def _finish(self, interrupted: bool) -> None:
+        if self._closed:
+            return
         self._task = None
         ok = sum(1 for _, outcome, _ in self._results if outcome == "ok")
         skipped = sum(1 for _, outcome, _ in self._results if outcome == "saltata")
@@ -278,7 +301,18 @@ class BatchDialog(QDialog):
         else:
             self.reject()
 
-    def closeEvent(self, event) -> None:
+    def _stop(self) -> None:
+        self._closed = True
         if self._task is not None:
             self._task.cancel()
+            self._task = None
+            self._queue = []  # nessuna foto successiva
+
+    def reject(self) -> None:
+        """Esc o chiusura: l'elaborazione viene interrotta, non lasciata girare di nascosto."""
+        self._stop()
+        super().reject()
+
+    def closeEvent(self, event) -> None:
+        self._stop()
         super().closeEvent(event)

@@ -103,17 +103,89 @@ class Settings:
     def from_dict(cls, data: dict[str, Any]) -> "Settings":
         """Crea le impostazioni da un dizionario, ignorando chiavi sconosciute."""
 
-        def build(dc_type, values: dict[str, Any] | None):
-            values = values or {}
-            known = {f.name for f in fields(dc_type)}
-            kwargs = {k: v for k, v in values.items() if k in known}
-            if "wb_custom" in kwargs:
-                kwargs["wb_custom"] = tuple(float(x) for x in kwargs["wb_custom"])
-            return dc_type(**kwargs)
+        """Costruisce le impostazioni da un dizionario (preset, impostazioni salvate).
 
+        I valori di tipo sbagliato o fuori dall'elenco (es. "0,8" come testo, un formato sconosciuto)
+        tornano al valore predefinito invece di far fallire l'elaborazione più avanti.
+        """
+        if not isinstance(data, dict):
+            data = {}
         return cls(
-            develop=build(DevelopSettings, data.get("develop")),
-            denoise=build(DenoiseSettings, data.get("denoise")),
-            tone=build(ToneSettings, data.get("tone")),
-            output=build(OutputSettings, data.get("output")),
+            develop=_build(DevelopSettings, data.get("develop")),
+            denoise=_build(DenoiseSettings, data.get("denoise")),
+            tone=_build(ToneSettings, data.get("tone")),
+            output=_build(OutputSettings, data.get("output")),
         )
+
+
+def _choices() -> dict[str, Any]:
+    from .algorithms import ALGORITHMS
+
+    return {
+        "wb_mode": WB_MODES, "demosaic": DEMOSAIC_ALGORITHMS, "raw_stage": RAW_STAGES,
+        "format": OUTPUT_FORMATS, "algorithm": ALGORITHMS, "bit_depth": (8, 16),
+    }
+
+
+#: Limiti dei valori numerici.
+_RANGES: dict[str, tuple[float, float]] = {
+    "luma_strength": (0.0, 10.0), "chroma_strength": (0.0, 10.0), "detail": (0.0, 1.0),
+    "hot_pixel_threshold": (0.0, 100.0), "exposure_ev": (-10.0, 10.0), "jpeg_quality": (1, 100),
+}
+
+
+def _coerce(name: str, value: Any, default: Any) -> Any:
+    """Converte ``value`` nel tipo di ``default``; solleva ValueError se non è possibile."""
+    if isinstance(default, bool):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and value in (0, 1):
+            return bool(value)
+        if isinstance(value, str) and value.strip().lower() in ("true", "false", "1", "0", "sì", "si", "no"):
+            return value.strip().lower() in ("true", "1", "sì", "si")
+        raise ValueError(name)
+    if isinstance(default, (int, float)):
+        if isinstance(value, bool):
+            raise ValueError(name)
+        if isinstance(value, str):
+            value = float(value.strip().replace(",", "."))  # anche la virgola decimale italiana
+        number = float(value)
+        if number != number:  # NaN
+            raise ValueError(name)
+        lo, hi = _RANGES.get(name, (-float("inf"), float("inf")))
+        number = min(max(number, lo), hi)
+        return int(round(number)) if isinstance(default, int) else number
+    if isinstance(default, str):
+        if not isinstance(value, str):
+            raise ValueError(name)
+        return value
+    if isinstance(default, tuple):  # wb_custom
+        values = tuple(float(str(x).replace(",", ".")) for x in value)
+        if len(values) != len(default) or any(not (0.01 <= x <= 100) for x in values):
+            raise ValueError(name)
+        return values
+    if isinstance(default, dict):
+        if not isinstance(value, dict):
+            raise ValueError(name)
+        return dict(value)
+    return value
+
+
+def _build(dc_type, values: Any):
+    defaults = dc_type()
+    if not isinstance(values, dict):
+        return defaults
+    choices = _choices()
+    kwargs: dict[str, Any] = {}
+    for f in fields(dc_type):
+        if f.name not in values:
+            continue
+        default = getattr(defaults, f.name)
+        try:
+            value = _coerce(f.name, values[f.name], default)
+        except (ValueError, TypeError):
+            continue
+        if f.name in choices and value not in choices[f.name]:
+            continue
+        kwargs[f.name] = value
+    return dc_type(**kwargs)

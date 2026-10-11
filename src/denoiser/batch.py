@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
@@ -33,18 +34,31 @@ class JobResult:
         return self.error is None and not self.skipped
 
 
-def collect_inputs(paths: Iterable[str | Path], recursive: bool = False) -> list[Path]:
+def collect_inputs(paths: Iterable[str | Path], recursive: bool = False, output_folder: str = "") -> list[Path]:
     """Espande le cartelle nei file supportati che contengono, senza duplicati.
 
     I file indicati esplicitamente vengono sempre inclusi, così un eventuale errore
     (file mancante o formato non supportato) viene segnalato invece di essere ignorato.
+    Nelle cartelle si saltano i risultati di elaborazioni precedenti (la sottocartella di uscita,
+    es. «denoised») e i file temporanei: rielaborarli creerebbe «denoised/denoised/…_dn_dn».
     """
+    skip_dir = Path(output_folder).name if output_folder and not Path(output_folder).is_absolute() else ""
+    absolute_out = Path(output_folder).resolve() if output_folder and Path(output_folder).is_absolute() else None
+
+    def wanted(c: Path, root: Path) -> bool:
+        if not c.is_file() or not is_supported(c) or ".parziale" in c.name:
+            return False
+        parents = c.relative_to(root).parts[:-1]
+        if skip_dir and skip_dir in parents:
+            return False
+        return absolute_out is None or absolute_out not in c.resolve().parents
+
     found: list[Path] = []
     seen: set[Path] = set()
     for p in map(Path, paths):
         if p.is_dir():
             pattern = p.rglob("*") if recursive else p.glob("*")
-            candidates = [c for c in sorted(pattern) if c.is_file() and is_supported(c)]
+            candidates = [c for c in sorted(pattern) if wanted(c, p)]
         else:
             candidates = [p]
         for c in candidates:
@@ -77,7 +91,10 @@ def export_image(
     interrotta (errore, annullamento, chiusura) non lascia mai un file a metà.
     """
     destination = Path(destination)
-    temporary = destination.with_name(f"{destination.stem}.parziale{destination.suffix}")
+    if image.meta.source.is_file() and destination.resolve() == image.meta.source.resolve():
+        raise ValueError("Il file di uscita coinciderebbe con l'originale: cambia cartella o nome in «Salvataggio».")
+    # Nome temporaneo unico: due esportazioni verso lo stesso file non si pestano i piedi.
+    temporary = destination.with_name(f"{destination.stem}.parziale-{uuid.uuid4().hex[:8]}{destination.suffix}")
     try:
         written = _write_output(image, analysis, settings, temporary, progress)
         if settings.output.copy_metadata and image.meta.source.is_file():
@@ -86,6 +103,8 @@ def export_image(
             problem = copy_metadata(image.meta.source, written)
             if problem and notes is not None:
                 notes.append(problem)
+        if progress is not None:
+            progress(1.0, "Salvataggio")  # ultimo punto in cui l'utente può ancora interrompere
         os.replace(written, destination)
     finally:
         if temporary.exists():
@@ -110,6 +129,7 @@ def _write_output(
         alpha=image.alpha if out.format != "jpeg" else None,
         exif_bytes=image.meta.exif_bytes,
         description=description,
+        icc_profile=image.meta.icc_profile,
     )
 
 
@@ -134,7 +154,8 @@ def _export_dng(
         sensor = denoised_sensor_data(
             src.data, src.sensor_model, get_algorithm(ds.algorithm), ds, src.flip, denoise=active, progress=progress
         )
-        return write_bayer_dng(destination, sensor, make, model, exposure, description)
+        # L'esposizione di base del DNG d'origine (es. da Adobe DNG Converter) va conservata.
+        return write_bayer_dng(destination, sensor, make, model, exposure + sensor.source_baseline_exposure, description)
     linear = denoise_region(image, analysis, settings, progress=progress)
     return write_linear_dng(destination, linear, make, model, exposure, description)
 
@@ -147,7 +168,11 @@ def process_file(
     progress: ProgressFn | None = None,
     image: ImageData | None = None,
     analysis: Analysis | None = None,
+    taken: set[Path] | None = None,
 ) -> JobResult:
+    """Elabora una foto. ``taken``: file già prodotti nella stessa corsa (es. IMG_1.NEF e IMG_1.JPG
+    danno lo stesso nome): non vengono mai sovrascritti, si usa un nome nuovo; il nuovo file viene
+    aggiunto all'insieme."""
     path = Path(path)
     result = JobResult(source=path)
     try:
@@ -155,10 +180,12 @@ def process_file(
             image = load_image(path, settings.develop, use_dng_converter, converter_path)
         result.notes.extend(image.meta.notes)
         destination = output_path(image.meta, settings.output, settings.denoise.algorithm)
-        if destination.exists() and not settings.output.overwrite:
+        if (taken is not None and destination in taken) or (destination.exists() and not settings.output.overwrite):
             destination = unique_path(destination)
         analysis = analysis or analyze(image)
         result.output = export_image(image, analysis, settings, destination, progress, result.notes)
+        if taken is not None:
+            taken.add(result.output)
     except Exception as exc:  # l'errore viene riportato all'utente, il batch prosegue
         result.error = str(exc) or exc.__class__.__name__
     return result

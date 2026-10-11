@@ -10,7 +10,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 from .. import __version__
@@ -49,25 +48,18 @@ def copy_metadata(source: Path, target: Path, exiftool: Path | None = None) -> s
             "-TagsFromFile", str(source), "-all:all"]
     args += [f"--{tag}" for tag in _EXCLUDED]
     args += [f"-Software=Denoiser {__version__}", str(target)]
-    # I nomi dei file passano da un file di argomenti UTF-8: funziona anche con lettere
-    # accentate su Windows.
-    fd, argfile = tempfile.mkstemp(suffix=".args")
+    # Gli argomenti arrivano da stdin in UTF-8 («-@ -»): funziona con lettere accentate nei nomi dei
+    # file e nel nome utente su Windows, senza file temporanei.
+    kwargs = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write("\n".join(args) + "\n")
-        kwargs = {}
-        if sys.platform == "win32":
-            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
         result = subprocess.run(
-            [str(exiftool), "-@", argfile], capture_output=True, timeout=120, **kwargs
+            [str(exiftool), "-@", "-"], input=("\n".join(args) + "\n").encode("utf-8"),
+            capture_output=True, timeout=120, **kwargs
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return f"ExifTool non è riuscito a copiare i metadati: {exc}"
-    finally:
-        try:
-            os.unlink(argfile)
-        except OSError:
-            pass
     if result.returncode != 0:
         detail = result.stderr.decode("utf-8", "replace").strip().splitlines()
         return "ExifTool: " + (detail[-1] if detail else f"codice {result.returncode}")

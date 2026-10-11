@@ -59,6 +59,7 @@ class SensorData:
     camera_neutral: np.ndarray | None  # (3,) AsShotNeutral
     flip: int
     source_color_tags: list[tuple] | None = None  # tag copiati da un DNG di origine
+    source_baseline_exposure: float = 0.0  # BaselineExposure del DNG di origine (EV)
 
 
 def _srational(values, denominator: int = 10000) -> tuple[int, ...]:
@@ -91,6 +92,20 @@ def color_tags_from_dng_bytes(data: bytes) -> list[tuple] | None:
             return out
     except Exception:
         return None
+
+
+def baseline_exposure_from_dng_bytes(data: bytes) -> float:
+    """BaselineExposure di un DNG (0 se assente): i DNG di Adobe DNG Converter lo usano sempre."""
+    try:
+        with tifffile.TiffFile(io.BytesIO(data)) as tif:
+            tag = tif.pages[0].tags.get(_BASELINE_EXPOSURE)
+            if tag is None:
+                return 0.0
+            value = tag.value
+            num, den = (value[0], value[1]) if isinstance(value, tuple) else (value, 1)
+            return float(num) / float(den or 1)
+    except Exception:
+        return 0.0
 
 
 def _common_tags(make: str, model: str, baseline_exposure: float) -> list[tuple]:

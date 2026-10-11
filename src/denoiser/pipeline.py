@@ -223,19 +223,26 @@ _NOISE_LEVELS = ((2.0, "basso"), (5.0, "medio"), (10.0, "alto"))
 
 
 def noise_judgement(image: ImageData, analysis: Analysis) -> tuple[str, str]:
-    """Giudizio a parole sul rumore della foto ("basso", "medio", "alto", "molto alto") e dettaglio numerico."""
+    """Giudizio a parole sul rumore della foto ("basso", "medio", "alto", "molto alto") e dettaglio numerico.
+
+    In tutti i casi è la deviazione del rumore in percentuale della luce, su un grigio medio
+    (18% dopo la luminosità della foto), così RAW e JPG sono confrontabili.
+    """
     if image.raw_source is not None:
         model = image.raw_source.sensor_model
     else:
         model = analysis.noise_model
     if model is not None:
-        # Deviazione del rumore sui grigi medi (18%), in percentuale del segnale.
-        percent = float(np.mean([np.sqrt(model.a[c] * 0.18 + model.b[c]) / 0.18 * 100 for c in range(3)]))
-        detail = f"circa {percent:.1f}% nei mezzitoni".replace(".", ",")
+        # Grigio medio nei dati lineari: 18% dopo il guadagno della luminosità automatica. Canale verde
+        # (il riferimento della luminanza; R e B dipendono dal bilanciamento del bianco).
+        mid = 0.18 / max(analysis.brightness_gain, 1.0)
+        percent = float(np.sqrt(max(model.a[1] * mid + model.b[1], 0.0)) / mid * 100)
     else:
-        # Immagini già sviluppate: deviazione per canale rispetto al valore massimo, rapportata ai mezzitoni.
-        percent = float(np.sqrt(np.mean(np.square(analysis.channel_sigma)))) / 0.5 * 100
-        detail = f"circa {percent:.1f}% nei mezzitoni".replace(".", ",")
+        # Immagini già codificate in sRGB: il grigio medio vale 0,46 e lì la pendenza della curva sRGB
+        # (dL/dV ≈ 0,835) riporta il rumore in termini di luce, come per i RAW.
+        sigma = float(np.sqrt(np.mean(np.square(analysis.channel_sigma))))
+        percent = sigma * 0.835 / 0.18 * 100
+    detail = f"circa {percent:.1f}% nei mezzitoni".replace(".", ",")
     level = "molto alto"
     for limit, label in _NOISE_LEVELS:
         if percent < limit:

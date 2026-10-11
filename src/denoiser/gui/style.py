@@ -8,52 +8,60 @@ from __future__ import annotations
 import sys
 
 from PySide6.QtCore import QLocale, QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QIconEngine, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QWidget
 
 ACCENT = "#4a8fd9"
 OK = "#6fbf73"
 WARN = "#e0b050"
 TEXT = "#d4d4d4"
-TEXT_DIM = "#8a8a8a"
+TEXT_DIM = "#9a9a9a"  # contrasto ≥ 4,5:1 sullo sfondo (WCAG AA)
+#: Sfondo dei pulsanti principali: testo bianco con contrasto ≥ 4,5:1.
+PRIMARY = "#3570b8"
+PRIMARY_HOVER = "#3d7cc9"
 CANVAS = QColor(30, 30, 30)
 
 QSS = f"""
 QWidget {{ color: {TEXT}; }}
+QWidget:disabled {{ color: #6a6a6a; }}
 QMainWindow, QDialog {{ background: #262626; }}
 QToolTip {{ background: #333333; color: #e0e0e0; border: 1px solid #444; padding: 6px; }}
 QMenuBar {{ background: #202020; }}
 QMenuBar::item:selected {{ background: #353535; }}
 QMenu {{ background: #2b2b2b; border: 1px solid #3a3a3a; }}
-QMenu::item:selected {{ background: {ACCENT}; color: white; }}
+QMenu::item:selected {{ background: {PRIMARY}; color: white; }}
 QMenu::separator {{ height: 1px; background: #3a3a3a; margin: 4px 8px; }}
 QToolBar {{ background: #202020; border: none; border-bottom: 1px solid #111; spacing: 4px; padding: 4px 6px; }}
 QToolButton {{ padding: 4px 8px; border-radius: 4px; }}
 QToolButton:hover {{ background: #353535; }}
 QToolButton:checked {{ background: #3a3a3a; }}
-QToolButton#primary {{ background: {ACCENT}; color: white; padding: 5px 16px; font-weight: 600; }}
-QToolButton#primary:hover {{ background: #5a9ce3; }}
+QToolButton#primary {{ background: {PRIMARY}; color: white; padding: 5px 16px; font-weight: 600; }}
+QToolButton#primary:hover {{ background: {PRIMARY_HOVER}; }}
 QToolButton#primary:disabled {{ background: #3a3a3a; color: #777; }}
 QPushButton {{ background: #353535; border: 1px solid #444; border-radius: 4px; padding: 5px 12px; }}
 QPushButton:hover {{ background: #404040; }}
 QPushButton:disabled {{ color: #666; border-color: #333; }}
-QPushButton#primary {{ background: {ACCENT}; border-color: {ACCENT}; color: white; font-weight: 600; }}
-QPushButton#primary:hover {{ background: #5a9ce3; }}
+QPushButton#primary {{ background: {PRIMARY}; border-color: {PRIMARY}; color: white; font-weight: 600; }}
+QPushButton#primary:hover {{ background: {PRIMARY_HOVER}; }}
 QPushButton#link {{ background: transparent; border: none; color: {ACCENT}; padding: 2px 4px; text-align: left; }}
 QPushButton#link:hover {{ text-decoration: underline; }}
 QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {{
-    background: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 4px; padding: 2px 6px; min-height: 20px;
+    background: #1e1e1e; border: 1px solid #5c5c5c; border-radius: 4px; padding: 2px 6px; min-height: 20px;
 }}
 QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{ subcontrol-origin: border; width: 0px; height: 0px; border: none; }}
 QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QLineEdit:focus {{ border-color: {ACCENT}; }}
 QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QLineEdit:disabled {{ color: #5c5c5c; border-color: #2e2e2e; }}
 QComboBox QAbstractItemView {{ background: #2b2b2b; selection-background-color: {ACCENT}; }}
-QSlider::groove:horizontal {{ height: 2px; background: #4a4a4a; }}
-QSlider::sub-page:horizontal {{ background: #8a8a8a; }}
+QSlider::groove:horizontal {{ height: 2px; background: #6a6a6a; }}
+QSlider::sub-page:horizontal {{ background: #a0a0a0; }}
 QSlider::handle:horizontal {{ width: 12px; height: 12px; margin: -5px 0; border-radius: 6px; background: #d0d0d0; }}
 QSlider::handle:horizontal:hover {{ background: #ffffff; }}
 QSlider::handle:horizontal:disabled {{ background: #555; }}
-QCheckBox::indicator {{ width: 14px; height: 14px; }}
+QCheckBox::indicator {{ width: 14px; height: 14px; border: 1px solid #7a7a7a; border-radius: 3px; background: #1e1e1e; }}
+QCheckBox::indicator:hover {{ border-color: #a0a0a0; }}
+QCheckBox::indicator:checked {{ background: {PRIMARY}; border-color: {PRIMARY}; image: url(%CHECK%); }}
+QCheckBox::indicator:disabled {{ border-color: #444; background: #232323; }}
+QCheckBox::indicator:checked:disabled {{ background: #3a3a3a; border-color: #3a3a3a; }}
 QGroupBox {{ border: none; border-top: 1px solid #3a3a3a; margin-top: 16px; padding-top: 12px; font-weight: 600; }}
 QGroupBox::title {{ subcontrol-origin: margin; left: 0; padding: 0 0 4px 0; color: #bdbdbd; }}
 QGroupBox#sub {{ border-top: none; border-left: 2px solid #3a3a3a; margin-top: 8px; margin-left: 2px; padding-left: 8px; font-weight: 500; }}
@@ -111,12 +119,36 @@ def apply_theme(app: QApplication) -> None:
     for role in (QPalette.ColorRole.Text, QPalette.ColorRole.WindowText, QPalette.ColorRole.ButtonText):
         palette.setColor(QPalette.ColorGroup.Disabled, role, QColor("#6a6a6a"))
     app.setPalette(palette)
-    app.setStyleSheet(QSS)
+    app.setStyleSheet(QSS.replace("%CHECK%", _check_mark_file()))
     font = QFont("Segoe UI" if sys.platform == "win32" else app.font().family(), 9)
     app.setFont(font)
     # Virgola decimale e formati italiani nelle caselle numeriche.
     QLocale.setDefault(QLocale(QLocale.Language.Italian, QLocale.Country.Italy))
     app.setWindowIcon(app_icon())
+
+
+def _check_mark_file() -> str:
+    """Segno di spunta per le caselle (il QSS vuole un file): disegnato una volta in una cartella temporanea."""
+    import tempfile
+    from pathlib import Path
+
+    path = Path(tempfile.gettempdir()) / "denoiser-theme" / "spunta.png"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pm = QPixmap(48, 48)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(QColor("white"), 6)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+        p.drawPolyline([QPointF(11, 25), QPointF(20, 34), QPointF(37, 14)])
+        p.end()
+        pm.save(str(path))
+    except OSError:
+        return ""
+    return path.as_posix()
 
 
 def dark_title_bar(widget: QWidget) -> None:
@@ -137,31 +169,47 @@ def dark_title_bar(widget: QWidget) -> None:
 
 # ---------------------------------------------------------------------------- icone
 
-_ICON_COLOR = QColor(TEXT)
+class _VectorIcon(QIconEngine):
+    """Icona vettoriale: disegnata alla dimensione e densità richieste, sempre nitida."""
+
+    def __init__(self, name: str, color: str | None):
+        super().__init__()
+        self._name = name
+        self._color = color
+
+    def clone(self) -> "QIconEngine":
+        return _VectorIcon(self._name, self._color)
+
+    def paint(self, painter: QPainter, rect, mode, state) -> None:  # noqa: ARG002
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = QColor(self._color or TEXT)
+        if mode == QIcon.Mode.Disabled:
+            color = QColor("#6a6a6a")
+        pen = QPen(color, 2.0)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.translate(rect.x(), rect.y())
+        painter.scale(rect.width() / 24, rect.height() / 24)
+        painter.setPen(pen)
+        _draw_icon(painter, self._name)
+        painter.restore()
+
+    def scaledPixmap(self, size, mode, state, scale: float) -> QPixmap:  # noqa: N802 (API Qt)
+        pm = QPixmap(max(1, round(size.width() * scale)), max(1, round(size.height() * scale)))
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        self.paint(p, pm.rect(), mode, state)
+        p.end()
+        pm.setDevicePixelRatio(scale)
+        return pm
+
+    def pixmap(self, size, mode, state) -> QPixmap:
+        return self.scaledPixmap(size, mode, state, 1.0)
 
 
-def _canvas(size: int = 36) -> tuple[QPixmap, QPainter]:
-    pm = QPixmap(size, size)
-    pm.fill(Qt.GlobalColor.transparent)
-    p = QPainter(pm)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    pen = QPen(_ICON_COLOR, size / 14)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    p.setPen(pen)
-    p.scale(size / 24, size / 24)
-    return pm, p
-
-
-def icon(name: str, color: str | None = None) -> QIcon:
-    """Icone semplici disegnate al volo (nessun file esterno)."""
-    if name == "folder":
-        name = "open"
-    pm, p = _canvas()
-    if color:
-        pen = p.pen()
-        pen.setColor(QColor(color))
-        p.setPen(pen)
+def _draw_icon(p: QPainter, name: str) -> None:
+    """Disegna l'icona ``name`` in un quadrato 24×24."""
     path = QPainterPath()
     if name == "open":
         path.moveTo(3, 7); path.lineTo(9, 7); path.lineTo(11, 9); path.lineTo(21, 9)
@@ -181,8 +229,8 @@ def icon(name: str, color: str | None = None) -> QIcon:
     elif name == "zoom100":
         p.drawEllipse(QRectF(3, 3, 13, 13))
         p.drawLine(QPointF(14, 14), QPointF(21, 21))
-        font = QFont(); font.setPixelSize(7); font.setBold(True); p.setFont(font)
-        p.drawText(QRectF(3, 3, 13, 13), Qt.AlignmentFlag.AlignCenter, "1:1")
+        p.drawLine(QPointF(9.5, 6.5), QPointF(9.5, 12.5))  # «1»: pixel reali
+        p.drawLine(QPointF(8, 8), QPointF(9.5, 6.5))
     elif name == "compare":
         p.drawRect(QRectF(3, 5, 18, 14))
         p.drawLine(QPointF(12, 3), QPointF(12, 21))
@@ -206,8 +254,11 @@ def icon(name: str, color: str | None = None) -> QIcon:
         p.drawLine(QPointF(12, 3), QPointF(12, 16))
         p.drawPolyline([QPointF(7, 11), QPointF(12, 16), QPointF(17, 11)])
         p.drawLine(QPointF(4, 20), QPointF(20, 20))
-    p.end()
-    return QIcon(pm)
+
+
+def icon(name: str, color: str | None = None) -> QIcon:
+    """Icone semplici disegnate al volo (nessun file esterno)."""
+    return QIcon(_VectorIcon("open" if name == "folder" else name, color))
 
 
 def app_icon() -> QIcon:

@@ -12,13 +12,16 @@ SRC = os.path.join(SPECPATH, "..", "src")
 hiddenimports = (
     collect_submodules("skimage.restoration")
     + collect_submodules("pywt")
-    + collect_submodules("onnxruntime")
+    # Solo il motore di inferenza: transformers/quantization/tools di onnxruntime sono strumenti
+    # di sviluppo (centinaia di moduli con dipendenze pesanti) che l'app non usa.
+    + ["onnxruntime"] + collect_submodules("onnxruntime.capi")
     + ["onnx", "onnx.helper", "onnx.numpy_helper", "onnx.checker"]
 )
 datas = collect_data_files("skimage") + collect_data_files("onnxruntime")
 # onnxruntime (e DirectML su Windows) vive in librerie dinamiche da includere esplicitamente.
 binaries = collect_dynamic_libs("onnxruntime")
-excludes = ["tkinter", "matplotlib", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore"]
+excludes = ["onnxruntime.transformers", "onnxruntime.quantization", "onnxruntime.tools", "torch",
+            "tkinter", "matplotlib", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore"]
 
 
 def analysis(script):

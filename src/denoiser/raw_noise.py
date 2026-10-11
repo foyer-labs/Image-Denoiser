@@ -52,14 +52,23 @@ def estimate_sensor_model(raw: rawpy.RawPy, max_pixels: int = 4_000_000) -> Nois
     return NoiseModel(a=a, b=b)
 
 
+#: Rapporto tra la varianza misurata dal gemello e quella vera, per algoritmo di demosaicizzazione
+#: (valori centrali misurati con simulazioni Monte Carlo su DNG sintetici sviluppati con LibRaw).
+TWIN_VARIANCE_BIAS = {"LINEAR": 1.0, "AHD": 1.22, "AAHD": 1.25, "PPG": 1.26, "DCB": 1.10, "VNG": 1.10, "DHT": 1.15}
+
+
 def measure_noise_twin(
     raw: rawpy.RawPy,
     postprocess: Callable[[], np.ndarray],
     developed: np.ndarray,
     seed: int = 1234,
     max_pixels: int = 4_000_000,
+    demosaic: str = "LINEAR",
 ) -> NoiseProfile:
     """Esegue il "gemello di rumore". Attenzione: modifica i dati grezzi di ``raw``.
+
+    Con le demosaicizzazioni adattive (AHD, PPG…) il gemello, costruito attorno all'immagine già
+    rumorosa, sovrastima la varianza del rumore: la si corregge con :data:`TWIN_VARIANCE_BIAS`.
 
     ``postprocess`` sviluppa ``raw`` con gli stessi parametri usati per ``developed``
     (RGB lineare float32 in [0, 1]).
@@ -93,6 +102,7 @@ def measure_noise_twin(
     tiles_diff = sample_tiles(diff, max_pixels)
     levels = np.concatenate([t.reshape(-1, 3) for t in tiles_dev])
     noises = np.concatenate([t.reshape(-1, 3) for t in tiles_diff])
+    noises = noises / np.float32(np.sqrt(TWIN_VARIANCE_BIAS.get(demosaic, 1.15)))
     a = np.zeros(3)
     b = np.zeros(3)
     for c in range(3):

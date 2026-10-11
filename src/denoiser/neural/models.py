@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import os
 import tempfile
+import threading
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -140,22 +141,40 @@ def download(spec: ModelSpec, progress: ProgressFn | None = None) -> Path:
     return target
 
 
+_CONVERT_LOCKS: dict[Path, threading.Lock] = {}
+_LOCKS_GUARD = threading.Lock()
+
+
 def ensure_onnx(spec: ModelSpec, tile: int, progress: ProgressFn | None = None) -> Path:
-    """Restituisce il modello ONNX, convertendolo dai pesi originali alla prima occorrenza."""
+    """Restituisce il modello ONNX, convertendolo dai pesi originali alla prima occorrenza.
+
+    Anteprima ed esportazione possono chiederlo insieme: un blocco per file evita due conversioni
+    in parallelo, e il file definitivo compare solo quando è completo.
+    """
     path = onnx_path(spec, tile)
     if path.is_file():
         return path
     if not is_downloaded(spec):
         raise ModelNotAvailableError(spec)
-    from .architectures import build_drunet, build_scunet
-    from .checkpoint import load_state_dict
+    with _LOCKS_GUARD:
+        lock = _CONVERT_LOCKS.setdefault(path, threading.Lock())
+    with lock:
+        if path.is_file():  # convertito da un altro lavoro mentre si aspettava
+            return path
+        from .architectures import build_drunet, build_scunet
+        from .checkpoint import load_state_dict
 
-    if progress is not None:
-        progress(0.0, f"Preparazione di {spec.label} (solo la prima volta)…")
-    state = load_state_dict(weights_path(spec))
-    model = build_drunet(state) if spec.key == "drunet" else build_scunet(state, tile)
-    onnx.checker.check_model(model)
-    tmp = path.with_suffix(".tmp")
-    onnx.save_model(model, str(tmp))
-    tmp.replace(path)
+        if progress is not None:
+            progress(0.0, f"Preparazione di {spec.label} (solo la prima volta)…")
+        state = load_state_dict(weights_path(spec))
+        model = build_drunet(state) if spec.key == "drunet" else build_scunet(state, tile)
+        onnx.checker.check_model(model)
+        fd, tmp_name = tempfile.mkstemp(suffix=".tmp", dir=path.parent)
+        os.close(fd)
+        tmp = Path(tmp_name)
+        try:
+            onnx.save_model(model, str(tmp))
+            tmp.replace(path)
+        finally:
+            tmp.unlink(missing_ok=True)
     return path

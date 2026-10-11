@@ -41,7 +41,8 @@ from ..batch import export_image
 from ..image import ImageData
 from ..io import load_image
 from ..io.dng_converter import find_converter
-from ..io.formats import OUTPUT_EXTENSIONS, file_dialog_filter, is_supported
+from ..algorithms import get_algorithm
+from ..io.formats import OUTPUT_EXTENSIONS, file_dialog_filter, is_supported, kind_of
 from ..io.naming import output_path, unique_path
 from ..noise import estimate_sigma
 from ..pipeline import Analysis, analyze, denoise_region, noise_judgement, render, uses_sensor_stage
@@ -59,7 +60,7 @@ from ..presets import (
 from ..settings import Settings
 from .batch_dialog import BatchDialog
 from .settings_panel import SettingsPanel
-from .split_view import MODES, SplitView
+from .split_view import MODES, SplitView, build_pyramid
 from .style import OK, WARN, app_icon, dark_title_bar, icon
 from .widgets import ActionButton, KeyBar
 from .workers import EtaEstimator, Task, format_duration, start
@@ -71,6 +72,11 @@ _MAX_RECENT = 10
 
 def _luma(rgb: np.ndarray) -> np.ndarray:
     return (rgb @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)).astype(np.float32)
+
+
+def base_job(image: ImageData, analysis: Analysis, settings: Settings):
+    """Immagine «prima» (senza denoise) già ridotta nei livelli per la vista."""
+    return build_pyramid(render(image, analysis, settings, None, False))
 
 
 def preview_job(image: ImageData, analysis: Analysis, settings: Settings, rect, before: np.ndarray, progress=None):
@@ -144,7 +150,13 @@ class MainWindow(QMainWindow):
         self._preset_name = ""
         self._preset_snapshot: dict | None = None
         self._last_export: Path | None = None
-        self._loaded_develop: dict | None = None
+        self._loading_path: Path | None = None
+        self._loaded_develop: dict | None = None  # sviluppo con cui è stata aperta la foto mostrata
+        self._loading_develop: dict | None = None
+        self._pending_export: tuple | None = None
+        self._presets: dict = {}
+        self._retone_request = 0
+        self._banner_serial = 0
 
         self._build_central()
         self.panel = SettingsPanel(self._load_last_settings())
@@ -530,6 +542,8 @@ class MainWindow(QMainWindow):
         generation = self._generation
         settings = self.panel.settings()
         self._loading = True
+        self._loading_path = path
+        self._loading_develop = settings.to_dict()["develop"]
         self._update_enabled()
         if self.view.has_image():
             self.view.set_overlay(f"Apertura di {path.name}…" if reset_view else "Nuovo sviluppo del RAW in corso…")
@@ -548,18 +562,24 @@ class MainWindow(QMainWindow):
 
     def _reload(self) -> None:
         """Nuovo sviluppo del RAW dopo un cambio di bilanciamento o di ricostruzione dei colori."""
-        if self._path is not None and self._image is not None and self._image.domain.value == "linear":
-            self._load(self._path, reset_view=False)
+        # Se un'altra foto si sta aprendo, va riaperta quella (con il nuovo sviluppo), non la precedente.
+        target = self._loading_path if self._loading else self._path
+        if target is not None and kind_of(target) == "raw":
+            self._load(target, reset_view=not self.view.has_image() or target != self._path)
 
     def _on_loaded(self, generation: int, path: Path, result, reset_view: bool) -> None:
         if generation != self._generation:
             return
+        # Nuova generazione: le anteprime partite durante il caricamento (sulla foto precedente)
+        # vengono scartate invece di essere mostrate e messe in cache come attuali.
+        self._generation += 1
         self._loading = False
+        self._loaded_develop = self._loading_develop
         self.statusBar().clearMessage()
         self._image, self._analysis = result
         self._path = path
-        self._loaded_develop = self.panel.settings().to_dict()["develop"]
         self._preview_cache = None
+        self._base_rgb = None  # la base vecchia non corrisponde più: l'anteprima aspetta quella nuova
         self.setWindowTitle(f"Denoiser — {path.name}")
         self._qs.setValue("ultima_cartella", str(path.parent))
         self._add_recent(path)
@@ -569,11 +589,15 @@ class MainWindow(QMainWindow):
         self.view.set_overlay("")
         self._refresh_base(reset_view=reset_view)
         self._update_enabled()
+        if self._pending_export is not None:
+            pending, self._pending_export = self._pending_export, None
+            QTimer.singleShot(0, lambda: self._export_to(*pending))
 
     def _on_load_failed(self, generation: int, path: Path, message: str, detail: str) -> None:
         if generation != self._generation:
             return
         self._loading = False
+        self._pending_export = None
         self.view.set_overlay("")
         self.statusBar().clearMessage()
         self._update_enabled()
@@ -599,7 +623,7 @@ class MainWindow(QMainWindow):
             how = "Con «Grana» = 1 viene tolto il rumore misurato."
         else:
             how = "Nei JPG il rumore è già stato elaborato dalla fotocamera: può servire una forza un po' più alta di 1."
-        noise = f"<b>Rumore: {level}</b> <span style='color:#8a8a8a'>({detail})</span><br><span style='color:#8a8a8a'>{how}</span>"
+        noise = f"<b>Rumore: {level}</b> <span style='color:#9a9a9a'>({detail})</span><br><span style='color:#9a9a9a'>{how}</span>"
         notes = list(m.notes)
         if is_raw and image.raw_source is None:
             notes.append("Sensore non standard: il rumore viene ridotto dopo lo sviluppo.")
@@ -624,17 +648,17 @@ class MainWindow(QMainWindow):
         self._base_request += 1
         request, generation = self._base_request, self._generation
         image, analysis, settings = self._image, self._analysis, self.panel.settings()
-        task = Task(render, image, analysis, settings, None, False)
-        task.signals.finished.connect(lambda rgb: self._on_base(request, generation, rgb, reset_view))
+        task = Task(base_job, image, analysis, settings)
+        task.signals.finished.connect(lambda levels: self._on_base(request, generation, levels, reset_view))
         task.signals.failed.connect(lambda msg, detail: generation == self._generation
                                     and self._show_error("Errore di visualizzazione", msg, detail))
         self._run(task)
 
-    def _on_base(self, request: int, generation: int, rgb, reset_view: bool) -> None:
+    def _on_base(self, request: int, generation: int, levels, reset_view: bool) -> None:
         if request != self._base_request or generation != self._generation:
             return
-        self._base_rgb = rgb
-        self.view.set_base(rgb, keep_view=not reset_view)
+        self._base_rgb = levels[0]  # uint8: 3 byte per pixel invece di 12
+        self.view.set_base(levels, keep_view=not reset_view)
         if reset_view:
             # Si parte al 100% al centro: il rumore (e la sua scomparsa) si vede subito.
             self.view.zoom_to(1.0)
@@ -661,10 +685,13 @@ class MainWindow(QMainWindow):
         if key != self._preview_key(settings) or tuple(cached_rect) != tuple(rect):
             return False
         x, y, w, h = rect
-        before = self._base_rgb[y : y + h, x : x + w].copy()
+        before = self._base_rgb[y : y + h, x : x + w].astype(np.float32) / 255.0
         task = Task(finish_preview, self._image, self._analysis, settings, linear, before)
-        generation = self._generation
-        task.signals.finished.connect(lambda res: generation == self._generation and self._show_preview(res, rect, 0.0))
+        self._retone_request += 1
+        request, generation = self._retone_request, self._generation
+        task.signals.finished.connect(
+            lambda res: request == self._retone_request and generation == self._generation
+            and self._show_preview(res, rect, 0.0))
         self._run(task)
         return True
 
@@ -700,7 +727,7 @@ class MainWindow(QMainWindow):
         if self._preview_cache is not None and self._preview_cache[0] == key and tuple(self._preview_cache[1]) == tuple(rect):
             return  # niente di nuovo da calcolare
         x, y, w, h = rect
-        before = self._base_rgb[y : y + h, x : x + w].copy()
+        before = self._base_rgb[y : y + h, x : x + w].astype(np.float32) / 255.0
         generation = self._generation
         task = Task(preview_job, self._image, self._analysis, settings, rect, before, with_progress=True)
         task.signals.progress.connect(lambda f, _m: self.view.set_busy(f if f > 0 else -1))
@@ -740,7 +767,7 @@ class MainWindow(QMainWindow):
     def _on_preview_failed(self, task: Task, message: str) -> None:
         if self._preview_done(task):
             return
-        title, text = humanize_error(message)
+        _title, text = humanize_error(message)
         self.view.set_hint(f"Anteprima non riuscita: {text}")
 
     def _on_preview_cancelled(self, task: Task) -> None:
@@ -816,9 +843,7 @@ class MainWindow(QMainWindow):
 
     def _restore(self, snapshot: dict) -> None:
         previous = self.panel.settings().to_dict()
-        self._applying_history = True
-        self.panel.set_settings(Settings.from_dict(snapshot))
-        self._applying_history = False
+        self._set_panel(Settings.from_dict(snapshot))
         self._after_bulk_change(previous)
 
     def _after_bulk_change(self, previous: dict) -> None:
@@ -835,6 +860,14 @@ class MainWindow(QMainWindow):
             self._tone_timer.start()
         self.view.mark_stale()
         self._schedule_preview()
+
+    def _set_panel(self, settings: Settings) -> None:
+        """Carica impostazioni nel pannello senza registrarle come nuova modifica nella cronologia."""
+        self._applying_history = True
+        try:
+            self.panel.set_settings(settings)
+        finally:
+            self._applying_history = False
 
     def _undo(self) -> None:
         self._history_timer.stop()
@@ -856,9 +889,7 @@ class MainWindow(QMainWindow):
         fresh.output = previous.output  # il salvataggio resta quello scelto dall'utente
         self._history_timer.stop()
         self._push_history()
-        self._applying_history = True
-        self.panel.set_settings(fresh)
-        self._applying_history = False
+        self._set_panel(fresh)
         self._preset_name, self._preset_snapshot = "Bilanciato", None
         self._push_history()
         self._after_bulk_change(previous.to_dict())
@@ -867,7 +898,8 @@ class MainWindow(QMainWindow):
     # ================================================================== preset
 
     def _refresh_presets(self) -> None:
-        entries = [(name, desc) for name, (desc, _e) in list_presets().items()]
+        self._presets = list_presets()  # letti dal disco una volta, non a ogni movimento dei cursori
+        entries = [(name, desc) for name, (desc, _e) in self._presets.items()]
         self.panel.set_presets(entries)
         self.preset_menu.clear()
         builtin = [e for e in entries if e[0] in BUILTIN_PRESETS]
@@ -904,17 +936,19 @@ class MainWindow(QMainWindow):
         previous = self.panel.settings()
         self._history_timer.stop()
         self._push_history()
-        new = apply_preset(previous, content)
-        self._applying_history = True
-        self.panel.set_settings(new)
-        self._applying_history = False
+        try:
+            new = apply_preset(previous, content)
+        except (PresetError, ValueError, TypeError, AttributeError) as exc:
+            self._show_error("Preset non valido", str(exc), "")
+            return
+        self._set_panel(new)
         self._preset_name = name
         self._preset_snapshot = self.panel.settings().to_dict()
         self._push_history()
         self._after_bulk_change(previous.to_dict())
 
     def _update_preset_label(self) -> None:
-        entries = list_presets()
+        entries = self._presets
         name = self._preset_name if self._preset_name in entries else ""
         description = entries[name][0] if name else "Impostazioni scelte da te."
         modified = False
@@ -962,7 +996,11 @@ class MainWindow(QMainWindow):
             return
         if not sections:
             return
-        save_preset(self.panel.settings(), path, sections)
+        try:
+            save_preset(self.panel.settings(), path, sections)
+        except OSError as exc:
+            self._show_error("Preset non salvato", str(exc), "")
+            return
         self._preset_name = path.stem
         self._preset_snapshot = self.panel.settings().to_dict()
         self._refresh_presets()
@@ -974,7 +1012,11 @@ class MainWindow(QMainWindow):
             return
         name, ok = QInputDialog.getItem(self, "Elimina preset", "Preset da eliminare:", mine, 0, False)
         if ok and name and QMessageBox.question(self, "Elimina preset", f"Eliminare il preset «{name}»?") == QMessageBox.StandardButton.Yes:
-            (user_presets_dir() / f"{name}.json").unlink(missing_ok=True)
+            try:
+                (user_presets_dir() / f"{name}.json").unlink(missing_ok=True)
+            except OSError as exc:
+                self._show_error("Preset non eliminato", str(exc), "")
+                return
             if self._preset_name == name:
                 self._preset_name = ""
             self._refresh_presets()
@@ -1108,11 +1150,22 @@ class MainWindow(QMainWindow):
         if self._image is None or self._analysis is None:
             QMessageBox.information(self, "Esporta", "Apri prima una foto.")
             return
-        if self._job is not None or self._loading:
+        if self._job is not None:
+            return
+        settings = self.panel.settings()
+        develop_changed = (kind_of(self._path) == "raw" and
+                           (self._develop_timer.isActive() or settings.to_dict()["develop"] != self._loaded_develop))
+        if self._loading or develop_changed:
+            # La foto sta per essere risviluppata (bilanciamento o colori appena cambiati): si esporta
+            # appena è pronta, altrimenti il file avrebbe lo sviluppo precedente.
+            self._pending_export = (destination, fmt, confirmed)
+            if develop_changed and not self._loading:
+                self._develop_timer.stop()
+                self._reload()
+            self.statusBar().showMessage("Esportazione appena terminato il nuovo sviluppo del RAW…", 8000)
             return
         if not self._ensure_model():
             return
-        settings = self.panel.settings()
         if fmt:
             settings.output.format = fmt
         if settings.output.format == "dng" and self._image.domain.value != "linear":
@@ -1162,18 +1215,24 @@ class MainWindow(QMainWindow):
         if settings.output.format in ("tiff", "png"):
             fmt += f" {settings.output.bit_depth} bit"
         d = settings.denoise
-        algorithm = self.panel.current_algorithm()
+        algorithm = get_algorithm(d.algorithm)  # quello usato per il file, non quello scelto nel frattempo
         summary = " · ".join(x for x in (fmt, size, format_duration(elapsed),
                                          f"{algorithm.label}, grana {d.luma_strength:.2f} / colore {d.chroma_strength:.2f}".replace(".", ",")) if x)
         extra = f"<br><span style='color:#e0b050'>{'; '.join(notes)}</span>" if notes else ""
         self.banner_text.setText(f"<b>Fatto!</b> {Path(path).name} salvato in {Path(path).parent}"
                                  f"<br><span style='color:#a8c0dc'>{summary}</span>{extra}")
         self.banner.show()
-        QTimer.singleShot(30000, self.banner.hide)
+        self._banner_serial += 1
+        serial = self._banner_serial
+        QTimer.singleShot(30000, lambda: serial == self._banner_serial and self.banner.hide())
 
     def _open_folder(self, folder: Path, create: bool = False) -> None:
         if create:
-            folder.mkdir(parents=True, exist_ok=True)
+            try:
+                folder.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                self._show_error("Cartella non disponibile", str(exc), "")
+                return
         if folder.is_dir():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
@@ -1189,7 +1248,8 @@ class MainWindow(QMainWindow):
         if not self._last_export:
             return
         if sys.platform == "win32":
-            subprocess.Popen(["explorer", "/select,", str(self._last_export)])
+            # Explorer vuole «/select,"percorso"» come un unico argomento.
+            subprocess.Popen(f'explorer /select,"{self._last_export}"')
         else:
             self._open_export_folder()
 
@@ -1207,6 +1267,7 @@ class MainWindow(QMainWindow):
         dialog = BatchDialog(self, self.panel.settings, converter, use_converter,
                              self._qs.value("ultima_cartella", ""), initial)
         dialog.exec()
+        dialog.deleteLater()
 
     # ================================================================== impostazioni ricordate
 
@@ -1214,7 +1275,7 @@ class MainWindow(QMainWindow):
         raw = self._qs.value("ultime_impostazioni", "")
         try:
             settings = Settings.from_dict(json.loads(raw)) if raw else Settings()
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, AttributeError, KeyError):
             settings = Settings()
         settings.output.overwrite = False
         return settings
@@ -1336,7 +1397,7 @@ class MainWindow(QMainWindow):
             self._job.cancel()
         for task in list(self._tasks):
             task.cancel()
-        QThreadPool.globalInstance().waitForDone(5000)
+        QThreadPool.globalInstance().waitForDone(20000)  # i lavori annullati si fermano al passo successivo
         self._save_last_settings()
         self._qs.setValue("geometria", self.saveGeometry())
         self._qs.setValue("stato_finestra", self.saveState())

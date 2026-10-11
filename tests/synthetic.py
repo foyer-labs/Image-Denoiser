@@ -42,8 +42,14 @@ def write_bayer_dng(
     black: int = 256,
     white: int = 4095,
     seed: int = 0,
+    wb: tuple[float, float, float] = (1.0, 1.0, 1.0),
 ) -> Path:
-    """Scrive un DNG Bayer RGGB a partire da un'immagine lineare, con rumore Poisson-gaussiano opzionale."""
+    """Scrive un DNG Bayer RGGB a partire da un'immagine lineare, con rumore Poisson-gaussiano opzionale.
+
+    ``wb``: moltiplicatori del bilanciamento del bianco (verde = 1). I dati del sensore sono
+    ``linear / wb``, come in una fotocamera vera dove R e B ricevono meno segnale del verde.
+    """
+    linear = np.asarray(linear, dtype=np.float32) / np.asarray(wb, dtype=np.float32)
     h, w = linear.shape[:2]
     h, w = h - h % 2, w - w % 2
     mosaic = np.empty((h, w), dtype=np.float32)
@@ -68,7 +74,7 @@ def write_bayer_dng(
         (50717, "I", 1, (white,), True),  # WhiteLevel
         (50721, "2i", 9, tuple(matrix), True),  # ColorMatrix1
         (50778, "H", 1, (21,), True),  # CalibrationIlluminant1 = D65
-        (50728, "2I", 3, (1, 1, 1, 1, 1, 1), True),  # AsShotNeutral
+        (50728, "2I", 3, tuple(v for m in wb for v in (int(round(10000 / m)), 10000)), True),  # AsShotNeutral
         (271, "s", 0, "Sintetica", True),  # Make
         (272, "s", 0, "Sintetica Bayer", True),  # Model
     ]

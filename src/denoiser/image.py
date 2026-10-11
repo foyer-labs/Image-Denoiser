@@ -41,6 +41,8 @@ class ImageMeta:
     wb_multipliers: tuple[float, float, float] | None = None
     #: Pattern CFA del sensore (es. "RGGB"), None se non Bayer o sconosciuto.
     cfa_pattern: str | None = None
+    #: Profilo colore ICC dell'originale (JPG/PNG/TIFF), reincorporato nel file di uscita.
+    icc_profile: bytes | None = None
     #: Note da mostrare all'utente (es. conversione tramite Adobe DNG Converter).
     notes: list[str] = field(default_factory=list)
 

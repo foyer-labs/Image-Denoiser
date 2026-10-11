@@ -57,9 +57,9 @@ class Task(QRunnable):
         try:
             if self._cancel.is_set():
                 raise Cancelled()
+            # Dopo la fine del lavoro un annullamento non conta più: il risultato (es. un file salvato)
+            # esiste già e va comunicato com'è.
             result = self._fn(*self._args, **self._kwargs)
-            if self._cancel.is_set():
-                raise Cancelled()
         except Cancelled:
             self.signals.cancelled.emit()
         except Exception as exc:  # mostrato all'utente
@@ -67,10 +67,18 @@ class Task(QRunnable):
             self.signals.failed.emit(str(exc) or exc.__class__.__name__, detail)
         else:
             self.signals.finished.emit(result)
+        finally:
+            # Rilascia subito foto e array: il Task può restare referenziato più a lungo del lavoro.
+            self._fn = None
+            self._args = ()
+            self._kwargs = {}
 
 
 def start(task: Task) -> Task:
-    QThreadPool.globalInstance().start(task)
+    """Avvia il lavoro. Si passa la funzione e non il QRunnable: così la proprietà dell'oggetto Python
+    resta a Python e la memoria viene liberata (con un QRunnable PySide la cede a C++ per sempre).
+    Chi avvia deve tenere un riferimento al Task finché non arriva un suo segnale finale."""
+    QThreadPool.globalInstance().start(task.run)
     return task
 
 
@@ -82,7 +90,6 @@ class EtaEstimator:
 
     def reset(self) -> None:
         self._start = time.perf_counter()
-        self._last_label = ""
 
     def text(self, fraction: float) -> str:
         elapsed = time.perf_counter() - self._start

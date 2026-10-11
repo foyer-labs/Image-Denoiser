@@ -109,16 +109,18 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
 
 def _cmd_elabora(args: argparse.Namespace) -> int:
     settings = _settings_from_args(args)
-    files = collect_inputs(args.input, args.ricorsivo)
+    files = collect_inputs(args.input, args.ricorsivo, settings.output.folder)
     if not files:
         print("Nessuna immagine trovata.", file=sys.stderr)
         return 1
     failures = 0
+    produced: set[Path] = set()
     for i, f in enumerate(files, 1):
         start = time.perf_counter()
         print(f"[{i}/{len(files)}] {f.name} … ", end="", flush=True)
         res = process_file(
-            f, settings, converter_path=args.dng_converter, use_dng_converter=not args.no_dng_converter
+            f, settings, converter_path=args.dng_converter, use_dng_converter=not args.no_dng_converter,
+            taken=produced,
         )
         if res.ok:
             print(f"ok ({time.perf_counter() - start:.1f} s) -> {res.output}")

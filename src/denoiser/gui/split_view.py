@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
 from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QImage, QKeyEvent, QPainter, QPainterPath, QPen, QWheelEvent
@@ -21,11 +22,43 @@ MODES = {
 }
 
 
+#: Livelli della piramide di riduzione (1, 1/2, … 1/16).
+PYRAMID_LEVELS = 5
+
+
+def to_uint8(rgb: np.ndarray) -> np.ndarray:
+    """sRGB float [0, 1] → uint8 con arrotondamento (veloce e senza grandi array temporanei)."""
+    if rgb.dtype == np.uint8:
+        return np.ascontiguousarray(rgb)
+    return cv2.convertScaleAbs(np.ascontiguousarray(rgb, dtype=np.float32), alpha=255.0)
+
+
+class _Frame:
+    """QImage che condivide la memoria con un array uint8 (che va tenuto in vita)."""
+
+    __slots__ = ("array", "image")
+
+    def __init__(self, u8: np.ndarray):
+        self.array = np.ascontiguousarray(u8)
+        h, w = self.array.shape[:2]
+        self.image = QImage(self.array.data, w, h, self.array.strides[0], QImage.Format.Format_RGB888)
+
+
+def build_pyramid(rgb: np.ndarray, levels: int = PYRAMID_LEVELS) -> list[np.ndarray]:
+    """Immagine uint8 e sue riduzioni a media d'area: nella vista ridotta il rumore appare com'è davvero
+    (la riduzione bilineare di Qt lo fa sembrare molto più forte e crea moiré)."""
+    out = [to_uint8(rgb)]
+    for _ in range(1, levels):
+        h, w = out[-1].shape[:2]
+        if min(h, w) < 64:
+            break
+        out.append(cv2.resize(out[-1], ((w + 1) // 2, (h + 1) // 2), interpolation=cv2.INTER_AREA))
+    return out
+
+
 def to_qimage(rgb: np.ndarray) -> QImage:
     """Converte un array sRGB float [0, 1] (H, W, 3) in QImage (con copia dei dati)."""
-    u8 = np.ascontiguousarray(np.clip(rgb * 255.0 + 0.5, 0, 255).astype(np.uint8))
-    h, w = u8.shape[:2]
-    return QImage(u8.data, w, h, 3 * w, QImage.Format.Format_RGB888).copy()
+    return _Frame(to_uint8(rgb)).image.copy()
 
 
 class SplitView(QWidget):
@@ -42,9 +75,9 @@ class SplitView(QWidget):
         self.setMouseTracking(True)
         self.setMinimumSize(320, 240)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self._base: QImage | None = None
-        self._patch: QImage | None = None
-        self._diff: QImage | None = None
+        self._base_levels: list[_Frame] = []
+        self._patch_levels: list[_Frame] = []
+        self._diff_levels: list[_Frame] = []
         self._patch_rect = QRect()
         self._stale = False
         self._busy: float | None = None  # None = fermo, -1 = indeterminato, 0..1 = avanzamento
@@ -64,25 +97,50 @@ class SplitView(QWidget):
         self._hint_rect = QRectF()
         self._stats = ""
         self._overlay = ""  # messaggio centrale (es. apertura in corso)
+        self._wheel_accum = 0
+
+    # «zoom» è espresso in pixel FISICI dello schermo: al 100% un pixel della foto è un pixel del monitor
+    # anche con la scala di Windows al 125-200%. In coordinate logiche di Qt la scala è zoom / dpr.
+
+    @property
+    def _base(self) -> QImage | None:
+        return self._base_levels[0].image if self._base_levels else None
+
+    @property
+    def _patch(self) -> QImage | None:
+        return self._patch_levels[0].image if self._patch_levels else None
+
+    def _dpr(self) -> float:
+        return max(1.0, float(self.devicePixelRatioF()))
+
+    def _scale(self) -> float:
+        return self._zoom / self._dpr()
 
     # ------------------------------------------------------------------ contenuti
 
-    def set_base(self, rgb: np.ndarray | None, keep_view: bool = False) -> None:
-        self._base = to_qimage(rgb) if rgb is not None else None
+    def set_base(self, rgb, keep_view: bool = False) -> None:
+        """``rgb``: array sRGB (float o uint8) oppure piramide già pronta (:func:`build_pyramid`)."""
+        if rgb is None:
+            levels = []
+        elif isinstance(rgb, list):
+            levels = rgb
+        else:
+            levels = build_pyramid(rgb)
+        self._base_levels = [_Frame(a) for a in levels]
         if not keep_view:
-            self._patch = self._diff = None
+            self._patch_levels = self._diff_levels = []
             self.fit()
         self.update()
 
     def set_patch(self, rgb: np.ndarray, rect: tuple[int, int, int, int], diff: np.ndarray | None = None) -> None:
-        self._patch = to_qimage(rgb)
-        self._diff = to_qimage(diff) if diff is not None else None
+        self._patch_levels = [_Frame(a) for a in build_pyramid(rgb)]
+        self._diff_levels = [_Frame(a) for a in build_pyramid(diff)] if diff is not None else []
         self._patch_rect = QRect(*rect)
         self._stale = False
         self.update()
 
     def clear_patch(self) -> None:
-        self._patch = self._diff = None
+        self._patch_levels = self._diff_levels = []
         self._stats = ""
         self.update()
 
@@ -117,7 +175,7 @@ class SplitView(QWidget):
 
     def _tick(self) -> None:
         self._busy_phase = (self._busy_phase + 0.02) % 1.0
-        self.update()
+        self.update(0, 0, self.width(), 4)  # solo la barra di avanzamento
 
     # ------------------------------------------------------------------ modalità
 
@@ -149,7 +207,7 @@ class SplitView(QWidget):
         if self._base is None:
             return
         w, h = self._base.width(), self._base.height()
-        zoom = min(self.width() / w, self.height() / h, 1.0)
+        zoom = min(self.width() * self._dpr() / w, self.height() * self._dpr() / h, 1.0)
         self._set_zoom(zoom, QPointF(self.width() / 2, self.height() / 2), center_image=True)
 
     def zoom_to(self, zoom: float, anchor: QPointF | None = None) -> None:
@@ -164,7 +222,8 @@ class SplitView(QWidget):
         self.zoom_to(target, anchor)
 
     def center_on(self, x: float, y: float) -> None:
-        self._offset = QPointF(self.width() / 2 - x * self._zoom, self.height() / 2 - y * self._zoom)
+        s = self._scale()
+        self._offset = QPointF(self.width() / 2 - x * s, self.height() / 2 - y * s)
         self._clamp_offset()
         self._emit_viewport()
         self.update()
@@ -173,14 +232,15 @@ class SplitView(QWidget):
         zoom = max(ZOOM_STEPS[0] / 2, min(ZOOM_STEPS[-1], zoom))
         if center_image and self._base is not None:
             self._zoom = zoom
+            s = self._scale()
             self._offset = QPointF(
-                (self.width() - self._base.width() * zoom) / 2,
-                (self.height() - self._base.height() * zoom) / 2,
+                (self.width() - self._base.width() * s) / 2,
+                (self.height() - self._base.height() * s) / 2,
             )
         else:
-            image_point = (anchor - self._offset) / self._zoom
+            image_point = (anchor - self._offset) / self._scale()
             self._zoom = zoom
-            self._offset = anchor - image_point * zoom
+            self._offset = anchor - image_point * self._scale()
         self._clamp_offset()
         self.zoomChanged.emit(self._zoom)
         self._emit_viewport()
@@ -189,7 +249,8 @@ class SplitView(QWidget):
     def _clamp_offset(self) -> None:
         if self._base is None:
             return
-        w, h = self._base.width() * self._zoom, self._base.height() * self._zoom
+        s = self._scale()
+        w, h = self._base.width() * s, self._base.height() * s
         x, y = self._offset.x(), self._offset.y()
         x = (self.width() - w) / 2 if w <= self.width() else min(0, max(self.width() - w, x))
         y = (self.height() - h) / 2 if h <= self.height() else min(0, max(self.height() - h, y))
@@ -198,10 +259,11 @@ class SplitView(QWidget):
     def visible_image_rect(self) -> tuple[int, int, int, int] | None:
         if self._base is None:
             return None
-        x0 = max(0, int(-self._offset.x() / self._zoom))
-        y0 = max(0, int(-self._offset.y() / self._zoom))
-        x1 = min(self._base.width(), int(np.ceil((self.width() - self._offset.x()) / self._zoom)))
-        y1 = min(self._base.height(), int(np.ceil((self.height() - self._offset.y()) / self._zoom)))
+        s = self._scale()
+        x0 = max(0, int(-self._offset.x() / s))
+        y0 = max(0, int(-self._offset.y() / s))
+        x1 = min(self._base.width(), int(np.ceil((self.width() - self._offset.x()) / s)))
+        y1 = min(self._base.height(), int(np.ceil((self.height() - self._offset.y()) / s)))
         if x1 <= x0 or y1 <= y0:
             return None
         return x0, y0, x1 - x0, y1 - y0
@@ -220,34 +282,60 @@ class SplitView(QWidget):
             return 0
         return int(self.width() * self._split)
 
+    def _snap(self, value: float) -> float:
+        """Allinea una coordinata logica alla griglia dei pixel fisici."""
+        dpr = self._dpr()
+        return round(value * dpr) / dpr
+
+    def _draw_levels(self, p: QPainter, levels: list[_Frame], target: QRectF) -> None:
+        """Disegna il livello della piramide più adatto allo zoom: mai ridurre più di 2× con Qt."""
+        level = 0
+        while level + 1 < len(levels) and self._zoom * (2 ** (level + 1)) <= 1.0 + 1e-6:
+            level += 1
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, self._zoom * (2**level) < 0.999)
+        p.drawImage(target, levels[level].image)
+
+    def _image_rect(self, x: float, y: float, w: float, h: float) -> QRectF:
+        s = self._scale()
+        ox, oy = self._snap(self._offset.x()), self._snap(self._offset.y())
+        return QRectF(QPointF(ox + x * s, oy + y * s), QPointF(ox + (x + w) * s, oy + (y + h) * s))
+
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
         p.fillRect(self.rect(), CANVAS)
         if self._base is None:
             return
-        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, self._zoom < 1.0)
-        target = QRectF(self._offset, self._offset + QPointF(self._base.width(), self._base.height()) * self._zoom)
+        target = self._image_rect(0, 0, self._base.width(), self._base.height())
         p.fillRect(target.adjusted(-1, -1, 1, 1), QColor(0, 0, 0, 120))
-        p.drawImage(target, self._base)
+        self._draw_levels(p, self._base_levels, target)
 
         split_x = self._split_x()
         after = QRectF(split_x, 0, self.width() - split_x, self.height())
-        shown = self._diff if self._mode == "diff" and self._diff is not None else self._patch
+        diff_mode = self._mode == "diff"
+        levels = self._diff_levels if diff_mode and self._diff_levels else self._patch_levels
         if split_x < self.width():
             p.save()
             p.setClipRect(after)
-            if shown is not None:
-                if self._stale:
-                    p.setOpacity(0.55)
+            veil = QColor(0, 0, 0, 90)
+            if levels:
                 r = self._patch_rect
-                patch_target = QRectF(
-                    self._offset + QPointF(r.x(), r.y()) * self._zoom,
-                    self._offset + QPointF(r.x() + r.width(), r.y() + r.height()) * self._zoom,
-                )
-                p.drawImage(patch_target, shown)
-                p.setOpacity(1.0)
+                patch_target = self._image_rect(r.x(), r.y(), r.width(), r.height())
+                # Fuori dalla zona calcolata non c'è un risultato: la si vela (o la si annulla nella
+                # vista differenza), così il rumore originale non viene scambiato per il «dopo».
+                outside = QPainterPath()
+                outside.addRect(after)
+                inner = QPainterPath()
+                inner.addRect(patch_target)
+                outside = outside.subtracted(inner)
+                p.fillPath(outside, QColor(128, 128, 128) if diff_mode else veil)
+                self._draw_levels(p, levels, patch_target)
+                if self._stale:
+                    # Risultato vecchio: resta a piena opacità (niente miscela con l'originale) ma velato.
+                    p.fillRect(patch_target, QColor(0, 0, 0, 110))
+            elif diff_mode:
+                p.fillRect(after, QColor(128, 128, 128))
             else:
-                p.fillRect(after, QColor(0, 0, 0, 90))  # nessun risultato: lato «dopo» velato
+                p.fillRect(after, veil)  # nessun risultato: lato «dopo» velato
             p.restore()
             if self._busy is not None:
                 self._draw_busy(p, after)
@@ -274,10 +362,11 @@ class SplitView(QWidget):
             p.fillRect(QRectF(max(bar.x(), x), 0, seg, 3), QColor(ACCENT))
 
     def _draw_handle(self, p: QPainter, split_x: int) -> None:
+        x = split_x + 0.5  # linea nitida: centrata su una colonna di pixel
         p.setPen(QPen(QColor(0, 0, 0, 110), 4))
-        p.drawLine(split_x, 0, split_x, self.height())
-        p.setPen(QPen(QColor(255, 255, 255, 230), 1.5))
-        p.drawLine(split_x, 0, split_x, self.height())
+        p.drawLine(QPointF(x, 0), QPointF(x, self.height()))
+        p.setPen(QPen(QColor(255, 255, 255, 230), 1))
+        p.drawLine(QPointF(x, 0), QPointF(x, self.height()))
         radius = 16 if self._hover_handle else 14
         center = QPointF(split_x, self.height() / 2)
         p.setBrush(QColor(30, 30, 30, 210))
@@ -323,7 +412,7 @@ class SplitView(QWidget):
     def _tag(self, p: QPainter, text: str, x: float, metrics) -> None:
         w = metrics.horizontalAdvance(text) + 14
         x = min(max(8, x), self.width() - 8 - w)
-        rect = QRectF(x, 10, w, 22)
+        rect = QRectF(x, 10, w, metrics.height() + 8)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(0, 0, 0, 160))
         p.drawRoundedRect(rect, 3, 3)
@@ -410,7 +499,17 @@ class SplitView(QWidget):
     def wheelEvent(self, event: QWheelEvent) -> None:
         if self._base is None:
             return
-        self.zoom_step(1 if event.angleDelta().y() > 0 else -1, event.position())
+        dy = event.angleDelta().y()
+        if dy == 0:
+            return  # scorrimento orizzontale: nessuno zoom
+        # Rotelline ad alta risoluzione e touchpad mandano frazioni di scatto: un livello ogni 120.
+        if (dy > 0) != (self._wheel_accum > 0):
+            self._wheel_accum = 0
+        self._wheel_accum += dy
+        while abs(self._wheel_accum) >= 120:
+            step = 1 if self._wheel_accum > 0 else -1
+            self._wheel_accum -= 120 * step
+            self.zoom_step(step, event.position())
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         key = event.key()

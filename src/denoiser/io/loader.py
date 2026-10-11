@@ -11,13 +11,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import rawpy
+
 from ..image import ImageData
 from ..settings import DevelopSettings
 from . import dng_converter
 from .exif import read_basic_exif
 from .formats import kind_of
 from .raster import load_jpeg, load_png_or_tiff
-from .raw import RawNotSupportedError, decode_raw
+from .raw import RawDamagedError, RawNotSupportedError, decode_raw
 
 
 class UnsupportedImageError(Exception):
@@ -36,10 +38,18 @@ def load_image(
     kind = kind_of(path)
     if kind is None:
         raise UnsupportedImageError(f"Formato non supportato: {path.suffix or path.name}")
-    if kind == "jpeg":
-        return load_jpeg(path)
-    if kind in ("png", "tiff"):
-        return load_png_or_tiff(path, kind)
+    if kind in ("jpeg", "png", "tiff"):
+        try:
+            return load_jpeg(path) if kind == "jpeg" else load_png_or_tiff(path, kind)
+        except UnsupportedImageError:
+            raise
+        except MemoryError:
+            raise
+        except Exception as exc:  # file troncato, danneggiato o con un tipo di pixel insolito
+            raise UnsupportedImageError(
+                f"Impossibile leggere {path.name}: il file sembra danneggiato o usa un formato interno "
+                f"non supportato ({exc})."
+            ) from exc
     return _load_raw(path, develop, use_dng_converter, converter_path)
 
 
@@ -51,6 +61,10 @@ def _load_raw(
 ) -> ImageData:
     try:
         return decode_raw(path, develop)
+    except RawDamagedError as exc:
+        raise UnsupportedImageError(str(exc)) from exc
+    except rawpy.LibRawIOError as exc:  # troncamento scoperto solo durante la decodifica
+        raise UnsupportedImageError(f"{path.name} sembra troncato o danneggiato (lettura interrotta).") from exc
     except RawNotSupportedError as exc:
         reason = str(exc)
 

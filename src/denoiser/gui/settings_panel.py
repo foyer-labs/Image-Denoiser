@@ -694,28 +694,30 @@ class SettingsPanel(QWidget):
                    *self.wb_spins]
         for w in widgets:
             w.blockSignals(True)
-        set_combo(self.algorithm, s.denoise.algorithm)
-        set_combo(self.raw_stage, s.denoise.raw_stage)
-        self.luma.set_value(s.denoise.luma_strength)
-        self.chroma.set_value(s.denoise.chroma_strength)
-        self.detail.set_value(s.denoise.detail)
-        self.hot_enabled.setChecked(s.denoise.hot_pixel_threshold > 0)
-        if s.denoise.hot_pixel_threshold > 0:
-            self.hot.set_value(_hot_decision(s.denoise.hot_pixel_threshold))
-        set_combo(self.wb, s.develop.wb_mode)
-        for spin, value in zip(self.wb_spins, s.develop.wb_custom):
-            spin.setValue(value)
-        set_combo(self.demosaic, s.develop.demosaic)
-        self.auto_bright.setChecked(s.tone.auto_brightness)
-        self.exposure.set_value(s.tone.exposure_ev)
-        set_combo(self.format, s.output.format)
-        set_combo(self.bits, str(s.output.bit_depth))
-        self.quality.set_value(s.output.jpeg_quality)
-        self.folder.setText(s.output.folder)
-        self.name.setText(s.output.name_template)
-        self.overwrite.setChecked(s.output.overwrite)
-        self.copy_metadata.setChecked(s.output.copy_metadata)
-        for w in widgets:
-            w.blockSignals(False)
+        try:
+            set_combo(self.algorithm, s.denoise.algorithm)
+            set_combo(self.raw_stage, s.denoise.raw_stage)
+            self.luma.set_value(s.denoise.luma_strength)
+            self.chroma.set_value(s.denoise.chroma_strength)
+            self.detail.set_value(s.denoise.detail)
+            self.hot_enabled.setChecked(s.denoise.hot_pixel_threshold > 0)
+            if s.denoise.hot_pixel_threshold > 0:
+                self.hot.set_value(_hot_decision(s.denoise.hot_pixel_threshold))
+            set_combo(self.wb, s.develop.wb_mode)
+            for spin, value in zip(self.wb_spins, s.develop.wb_custom):
+                spin.setValue(value)
+            set_combo(self.demosaic, s.develop.demosaic)
+            self.auto_bright.setChecked(s.tone.auto_brightness)
+            self.exposure.set_value(s.tone.exposure_ev)
+            set_combo(self.format, s.output.format)
+            set_combo(self.bits, str(s.output.bit_depth))
+            self.quality.set_value(s.output.jpeg_quality)
+            self.folder.setText(s.output.folder)
+            self.name.setText(s.output.name_template)
+            self.overwrite.setChecked(s.output.overwrite)
+            self.copy_metadata.setChecked(s.output.copy_metadata)
+        finally:  # i segnali non devono restare bloccati anche se un valore non è valido
+            for w in widgets:
+                w.blockSignals(False)
         self._rebuild_algorithm_form()
         self._update_applicability()

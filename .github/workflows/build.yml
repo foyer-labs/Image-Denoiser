@@ -74,6 +74,16 @@ jobs:
           dist\Denoiser\exiftool\exiftool.exe -ver
       - name: Verifica la riga di comando
         run: dist\Denoiser\denoiser-cli.exe --version
+      - name: Verifica RAW, wavelet e NLM nell'eseguibile
+        shell: pwsh
+        run: |
+          python -c "import sys; sys.path.insert(0, 'tests'); from pathlib import Path; from synthetic import clean_linear, write_bayer_dng; write_bayer_dng(Path('prova_raw.dng'), clean_linear(size=256), a=2e-3, b=1e-5)"
+          dist\Denoiser\denoiser-cli.exe elabora prova_raw.dng --algoritmo wavelet --formato tiff
+          if ($LASTEXITCODE -ne 0) { throw "RAW con wavelet non riuscito" }
+          dist\Denoiser\denoiser-cli.exe elabora prova_raw.dng --algoritmo nlm --formato dng --sovrascrivi
+          if ($LASTEXITCODE -ne 0) { throw "RAW con NLM e uscita DNG non riuscito" }
+          if (-not (Test-Path denoised\prova_raw_dn.tif)) { throw "TIFF mancante" }
+          if (-not (Test-Path denoised\prova_raw_dn.dng)) { throw "DNG mancante" }
       - uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/modelli

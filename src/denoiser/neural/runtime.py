@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import threading
 from pathlib import Path
 
@@ -22,6 +23,7 @@ def available_providers() -> list[str]:
     return list(ort.get_available_providers())
 
 
+@functools.lru_cache(maxsize=1)
 def gpu_status() -> tuple[bool, str]:
     """(scheda video utilizzabile?, descrizione per l'utente)."""
     try:

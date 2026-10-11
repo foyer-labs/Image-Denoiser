@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QSizePolicy,
     QSlider,
     QToolButton,
     QVBoxLayout,
@@ -86,6 +87,32 @@ def hint_label(text: str = "") -> QLabel:
     return label
 
 
+class MarkedSlider(QSlider):
+    """Cursore orizzontale con una tacca fissa (es. «1 = rumore misurato» a metà corsa).
+
+    Con lo stile del tema Qt non disegna le tacche: la si disegna qui.
+    """
+
+    def __init__(self):
+        super().__init__(Qt.Orientation.Horizontal)
+        self.mark: int | None = None
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (API Qt)
+        if self.mark is not None:
+            from PySide6.QtGui import QColor, QPainter
+
+            p = QPainter(self)
+            handle = 12  # larghezza della maniglia nel tema
+            span = max(1, self.maximum() - self.minimum())
+            x = round(handle / 2 + (self.mark - self.minimum()) / span * (self.width() - handle)) + 0.5
+            mid = self.height() / 2
+            p.setPen(QColor("#9a9a9a"))
+            p.drawLine(int(x), int(mid - 7), int(x), int(mid - 4))
+            p.drawLine(int(x), int(mid + 4), int(x), int(mid + 7))
+            p.end()
+        super().paintEvent(event)
+
+
 class FloatControl(QWidget):
     """Cursore + casella numerica collegati, con didascalia opzionale.
 
@@ -112,11 +139,10 @@ class FloatControl(QWidget):
         self._min, self._max = minimum, maximum
         self._center = center
         self._default = value if default is None else default
-        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider = MarkedSlider()
         self.slider.setRange(0, _SLIDER_STEPS)
         if center is not None:
-            self.slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-            self.slider.setTickInterval(_SLIDER_STEPS // 2)
+            self.slider.mark = _SLIDER_STEPS // 2
         self.spin = QDoubleSpinBox()
         self.spin.setRange(minimum, maximum)
         self.spin.setSingleStep(step)
@@ -185,10 +211,9 @@ class FloatControl(QWidget):
             return
         self._max = maximum
         self.spin.setMaximum(maximum)
-        if self._center is not None and self._center >= maximum:
-            self.slider.setTickPosition(QSlider.TickPosition.NoTicks)
-        elif self._center is not None:
-            self.slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        if self._center is not None:
+            self.slider.mark = None if self._center >= maximum else _SLIDER_STEPS // 2
+            self.slider.update()
         old = self.value()
         self.set_value(min(old, maximum))
         if self.value() != old:
@@ -355,7 +380,7 @@ class ActionButton(QToolButton):
         self.setToolTip(self._action.toolTip())
         if not self._action.icon().isNull():
             mode = QIcon.Mode.Normal if enabled else QIcon.Mode.Disabled
-            self._icon.setPixmap(self._action.icon().pixmap(QSize(18, 18), mode))
+            self._icon.setPixmap(self._action.icon().pixmap(QSize(18, 18), self.devicePixelRatioF(), mode))
         # Il colore delle etichette dipende dallo stato del pulsante: va ricalcolato a ogni cambio.
         for w in [self, *self.findChildren(QLabel)]:
             if w is not self:
@@ -381,14 +406,29 @@ class KeyBar(QFrame):
     def __init__(self, items: list[tuple[str, str]]):
         super().__init__()
         self.setObjectName("keybar")
+        # Non deve imporre una larghezza minima alla finestra: le voci che non entrano si nascondono.
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         row = QHBoxLayout(self)
         row.setContentsMargins(10, 4, 10, 4)
-        row.setSpacing(5)
-        for i, (key, text) in enumerate(items):
-            if i:
-                row.addSpacing(12)
-            row.addWidget(kbd(key))
+        row.setSpacing(0)
+        self._items: list[QWidget] = []
+        for key, text in items:
+            item = QWidget()
+            h = QHBoxLayout(item)
+            h.setContentsMargins(0, 0, 14, 0)
+            h.setSpacing(5)
+            h.addWidget(kbd(key))
             label = QLabel(text)
             label.setObjectName("keytext")
-            row.addWidget(label)
+            h.addWidget(label)
+            row.addWidget(item)
+            self._items.append(item)
         row.addStretch(1)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (API Qt)
+        super().resizeEvent(event)
+        available = self.width() - 20
+        used = 0
+        for item in self._items:
+            used += item.sizeHint().width()
+            item.setVisible(used <= available)

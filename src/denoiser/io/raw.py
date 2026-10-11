@@ -24,6 +24,10 @@ _UNSUPPORTED_ERRORS = (
 )
 
 
+class RawDamagedError(Exception):
+    """Il file RAW è vuoto o troncato: convertirlo non servirebbe."""
+
+
 class RawNotSupportedError(Exception):
     """LibRaw non riesce a sviluppare correttamente questo RAW."""
 
@@ -55,6 +59,8 @@ def decode_raw(path: Path, develop: DevelopSettings | None = None, measure_noise
     # Si legge il file in memoria: evita problemi con percorsi non ASCII su Windows.
     data = path.read_bytes()
     is_dng = path.suffix.lower() == ".dng"
+    if not data:
+        raise RawDamagedError(f"{path.name} è vuoto (0 byte).")
     try:
         raw = rawpy.imread(io.BytesIO(data))
     except _UNSUPPORTED_ERRORS as exc:
@@ -108,7 +114,7 @@ def decode_raw(path: Path, develop: DevelopSettings | None = None, measure_noise
         profile = None
         if cfa is not None and measure_noise:
             # Ultimo passo: modifica i dati grezzi di `raw`, che non vengono più usati.
-            profile = measure_noise_twin(raw, develop_linear, pixels)
+            profile = measure_noise_twin(raw, develop_linear, pixels, demosaic=develop.demosaic)
 
     raw_source = None
     # Il livello 3 richiede che ogni pixel sviluppato corrisponda a un pixel del sensore.
