@@ -1370,7 +1370,9 @@ class MainWindow(QMainWindow):
             self, "Denoiser",
             f"<b>Denoiser {__version__}</b><br>Riduzione del rumore per foto RAW, JPG e PNG, interamente in locale."
             "<br><br>Modelli neurali: DRUNet (MIT) e SCUNet (Apache 2.0) di Kai Zhang, scaricati dalle "
-            "pubblicazioni ufficiali. Lettura dei RAW: LibRaw. Metadati: ExifTool di Phil Harvey.",
+            "pubblicazioni ufficiali. Lettura dei RAW: LibRaw. Metadati: ExifTool di Phil Harvey."
+            "<br><br>Codice con licenza MIT · "
+            "<a href='https://github.com/foyer-labs/Image-Denoiser'>github.com/foyer-labs/Image-Denoiser</a>",
         )
 
     # ================================================================== utilità

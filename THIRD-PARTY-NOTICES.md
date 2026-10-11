@@ -2,7 +2,7 @@
 
 [← Torna al README](README.md)
 
-Denoiser usa componenti di altri autori, ciascuno con la propria licenza. Il pacchetto per Windows
+Il codice di Denoiser è distribuito con [licenza MIT](LICENSE). Denoiser usa componenti di altri autori, ciascuno con la propria licenza. Il pacchetto per Windows
 li include (tabella 1). I modelli neurali non sono inclusi: vengono scaricati al primo uso
 dalle pubblicazioni ufficiali (tabella 2). I testi completi delle licenze si trovano nei rispettivi
 progetti e, per le librerie Python, nelle cartelle `*.dist-info` del pacchetto.

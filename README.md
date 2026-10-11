@@ -12,6 +12,7 @@ Nessun abbonamento, nessun caricamento nel cloud: la foto non lascia mai il PC.
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)
 ![Interfaccia in italiano](https://img.shields.io/badge/interfaccia-italiano-009246)
+[![Licenza MIT](https://img.shields.io/badge/licenza-MIT-green)](LICENSE)
 
 <img src="docs/screenshots/02-confronto.jpg" alt="Confronto prima/dopo al 100% su un RAW ad ISO alto" width="900">
 
@@ -95,6 +96,10 @@ Misure di qualità e dettagli tecnici: **[come funziona](docs/come-funziona.md)*
 
 ## Licenza
 
-Progetto per uso personale; tutti i diritti riservati. I componenti di terze parti inclusi nel
-pacchetto, e i modelli neurali scaricati al primo uso, restano soggetti alle rispettive licenze:
-vedi [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Il codice è distribuito con **[licenza MIT](LICENSE)**: puoi usarlo, modificarlo, farne un fork e
+ridistribuirlo liberamente, anche in altri progetti, mantenendo l'avviso di copyright.
+
+I componenti di terze parti inclusi nel pacchetto per Windows, e i modelli neurali scaricati al primo
+uso, restano soggetti alle rispettive licenze: vedi [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Segnalazioni e proposte sono benvenute nella sezione
+[Issues](https://github.com/foyer-labs/Image-Denoiser/issues).

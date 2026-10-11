@@ -109,7 +109,10 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "Denoiser.exe è terminato con codice $($p.ExitCode)" }
       - name: Comprimi
         shell: pwsh
-        run: Compress-Archive -Path dist\Denoiser -DestinationPath Denoiser-windows.zip
+        run: |
+          # Licenza, avvisi di terze parti e novità accompagnano sempre l'eseguibile.
+          Copy-Item LICENSE, THIRD-PARTY-NOTICES.md, CHANGELOG.md dist\Denoiser\
+          Compress-Archive -Path dist\Denoiser -DestinationPath Denoiser-windows.zip
       - uses: actions/upload-artifact@v4
         with:
           name: Denoiser-windows

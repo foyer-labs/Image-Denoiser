@@ -9,6 +9,7 @@ Le versioni 0.x sono anteprime: la 1.0 arriverà dopo il collaudo sulle foto rea
 ## [0.9.0] - 2026-10-11
 
 Prima versione pubblicata: applicazione completa, in attesa del collaudo sui RAW reali.
+Codice distribuito con licenza MIT.
 
 ### Elaborazione
 

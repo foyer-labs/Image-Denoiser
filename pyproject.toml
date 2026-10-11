@@ -7,6 +7,7 @@ name = "denoiser"
 version = "0.9.0"
 description = "Riduzione del rumore per foto RAW, JPG e PNG, interamente in locale"
 readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.11"
 keywords = ["denoise", "riduzione del rumore", "raw", "dng", "nef", "fotografia", "wavelet", "drunet", "scunet"]
 classifiers = [
@@ -14,6 +15,7 @@ classifiers = [
     "Environment :: Win32 (MS Windows)",
     "Environment :: X11 Applications :: Qt",
     "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
     "Natural Language :: Italian",
     "Operating System :: Microsoft :: Windows :: Windows 10",
     "Operating System :: Microsoft :: Windows :: Windows 11",

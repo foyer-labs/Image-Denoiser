@@ -60,7 +60,7 @@ def version_info(description):
                 StringStruct("FileVersion", VERSION),
                 StringStruct("ProductName", "Denoiser"),
                 StringStruct("ProductVersion", VERSION),
-                StringStruct("LegalCopyright", "Uso personale"),
+                StringStruct("LegalCopyright", "Copyright (c) 2026 foyer-labs - licenza MIT"),
             ])]),
             VarFileInfo([VarStruct("Translation", [0x0410, 1200])]),
         ],
