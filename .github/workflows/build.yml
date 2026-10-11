@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      versione:
+        description: "Per pubblicare una release: numero di versione (es. 0.9.0), uguale a quello del codice. Vuoto = solo build."
+        required: false
+        default: ""
 
 jobs:
   test:
@@ -119,10 +124,11 @@ jobs:
           path: Denoiser-windows.zip
           retention-days: 30
 
-  # Pubblicazione di una versione: parte quando si invia un tag «vX.Y.Z» (vedi docs/sviluppo.md).
+  # Pubblicazione di una versione: parte quando si invia un tag «vX.Y.Z», oppure da
+  # Actions → «Run workflow» indicando la versione (il tag viene creato qui). Vedi docs/sviluppo.md.
   release:
     needs: build-windows
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.versione != '')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -133,10 +139,13 @@ jobs:
           name: Denoiser-windows
       - name: Controlla la versione e prepara le note di rilascio
         id: notes
+        env:
+          VERSIONE: ${{ inputs.versione }}
         run: |
           python3 - <<'PY'
           import os, re, sys
-          tag = os.environ["GITHUB_REF_NAME"]
+          wanted = os.environ.get("VERSIONE", "").strip()
+          tag = ("v" + wanted.removeprefix("v")) if wanted else os.environ["GITHUB_REF_NAME"]
           version = tag.removeprefix("v")
           code = re.search(r'__version__ = "([^"]+)"', open("src/denoiser/__init__.py", encoding="utf-8").read()).group(1)
           if code != version:
@@ -147,10 +156,12 @@ jobs:
               sys.exit(f"Nessuna sezione [{version}] in CHANGELOG.md")
           body = m.group(1).strip()
           body += ("\n\n---\n**Installazione:** scarica `Denoiser-windows-" + version + ".zip`, estrailo e avvia "
-                   "`Denoiser\\Denoiser.exe`. Guida completa nel [README](../../blob/" + tag + "/README.md).")
+                   "`Denoiser\\Denoiser.exe`. Guida completa nel [README](" + os.environ["GITHUB_SERVER_URL"] + "/"
+                   + os.environ["GITHUB_REPOSITORY"] + "/blob/" + tag + "/README.md).")
           open("note.md", "w", encoding="utf-8").write(body)
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               f.write(f"version={version}\n")
+              f.write(f"tag={tag}\n")
           PY
       - name: Rinomina il pacchetto
         run: |
@@ -158,10 +169,12 @@ jobs:
           sha256sum "Denoiser-windows-${{ steps.notes.outputs.version }}.zip" > "Denoiser-windows-${{ steps.notes.outputs.version }}.zip.sha256"
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.notes.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           name: Denoiser ${{ steps.notes.outputs.version }}
           body_path: note.md
           # Le versioni 0.x sono anteprime: diventeranno definitive dopo il collaudo sulle foto reali.
-          prerelease: ${{ startsWith(github.ref_name, 'v0.') || contains(github.ref_name, '-') }}
+          prerelease: ${{ startsWith(steps.notes.outputs.tag, 'v0.') || contains(steps.notes.outputs.tag, '-') }}
           files: |
             Denoiser-windows-${{ steps.notes.outputs.version }}.zip
             Denoiser-windows-${{ steps.notes.outputs.version }}.zip.sha256

@@ -80,18 +80,21 @@ Il workflow [`.github/workflows/build.yml`](../.github/workflows/build.yml) part
 2. **build-windows**: crea l'eseguibile, include ExifTool e lo collauda. Esegue la riga di comando
    su un DNG sintetico (wavelet → TIFF, NLM → DNG), scarica DRUNet ed elabora un'immagine, avvia
    l'interfaccia. Pubblica lo zip come artefatto *Denoiser-windows* (30 giorni);
-3. **release**: solo per i tag `vX.Y.Z` (vedi sotto).
+3. **release**: solo per i tag `vX.Y.Z` o per un avvio manuale con la versione indicata (vedi sotto).
 
 ## Pubblicare una versione
 
 1. Aggiorna la versione in `src/denoiser/__init__.py` e in `pyproject.toml`.
 2. In `CHANGELOG.md` sposta le voci di *Non rilasciato* in una nuova sezione `## [X.Y.Z] - data`.
-3. Fai il commit e invia il tag:
+3. Fai il commit e pubblica la versione in uno dei due modi:
+   - da GitHub: *Actions → Test e build Windows → Run workflow*, scegli il branch e scrivi la
+     versione (es. `0.9.0`) nel campo *versione*. Il tag `v0.9.0` viene creato dal workflow;
+   - da terminale, inviando il tag:
 
-   ```bash
-   git tag -a vX.Y.Z -m "Denoiser X.Y.Z"
-   git push origin vX.Y.Z
-   ```
+     ```bash
+     git tag -a vX.Y.Z -m "Denoiser X.Y.Z"
+     git push origin vX.Y.Z
+     ```
 
 Il job *release* controlla che il tag corrisponda alla versione del codice e prende le note dalla
 sezione del CHANGELOG. Poi crea la release su GitHub con `Denoiser-windows-X.Y.Z.zip` e la sua
