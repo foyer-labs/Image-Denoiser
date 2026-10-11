@@ -38,12 +38,14 @@ class GraphBuilder:
 
     # ------------------------------------------------------------------ operazioni comuni
 
-    def conv(self, x: str, weight: np.ndarray, bias: np.ndarray | None = None, stride: int = 1, pad: int = 0) -> str:
+    def conv(
+        self, x: str, weight: np.ndarray, bias: np.ndarray | None = None, stride: int = 1, pad: int = 0, groups: int = 1
+    ) -> str:
         inputs = [x, self.const(weight, "w")]
         if bias is not None:
             inputs.append(self.const(bias, "b"))
         k = weight.shape[2]
-        return self.op("Conv", inputs, kernel_shape=[k, k], strides=[stride, stride], pads=[pad] * 4)
+        return self.op("Conv", inputs, kernel_shape=[k, k], strides=[stride, stride], pads=[pad] * 4, group=groups)
 
     def conv_transpose(self, x: str, weight: np.ndarray, stride: int) -> str:
         k = weight.shape[2]

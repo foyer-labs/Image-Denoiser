@@ -22,7 +22,7 @@ import numpy as np
 from . import vst
 from .bayer import develop_denoised, display_rect_to_sensor, orient
 from .algorithms import get_algorithm
-from .color import opponent_to_rgb, rgb_to_opponent, srgb_encode
+from .color import opponent_to_rgb, rgb_to_opponent, srgb_decode, srgb_encode
 from .hotpixel import remove_hot_pixels
 from .image import Domain, ImageData
 from .joint import joint_denoise
@@ -161,6 +161,8 @@ def _denoise_rgb_stage(
     if not any(s > 0 for s in strengths):
         return work
     model = analysis.noise_model
+    if getattr(algorithm, "raw_model", False):
+        return _raw_model_rgb(work, model is not None, algorithm, ds, progress)
     stab = vst.forward(work, model) if model is not None else work
     if algorithm.joint:
         # Le reti lavorano su valori circa in [0, 1].
@@ -180,6 +182,23 @@ def _denoise_rgb_stage(
             opp[..., i] = cleaned
         stab = opponent_to_rgb(opp)
     return vst.inverse(stab, model) if model is not None else stab
+
+
+def _raw_model_rgb(work: np.ndarray, linear: bool, algorithm, ds, progress: ProgressFn | None) -> np.ndarray:
+    """Rete addestrata su RGB lineare (RawNIND «lineare»): niente trasformata stabilizzante.
+
+    Le immagini già codificate (JPG, PNG) vengono riportate in luce lineare e poi ricodificate.
+    Il risultato si dosa come per le altre reti «cieche»: luminanza e colore separati, forza massima 1.
+    """
+    lin = work if linear else srgb_decode(work)
+    cleaned = algorithm.denoise_linear(np.ascontiguousarray(lin, dtype=np.float32), ds.params, progress)
+    if not linear:
+        cleaned = srgb_encode(cleaned)
+    original = rgb_to_opponent(work)
+    residual = rgb_to_opponent(cleaned) - original
+    luma = min(ds.luma_strength, 1.0) * (1.0 - min(max(ds.detail, 0.0), 1.0))
+    chroma = min(ds.chroma_strength, 1.0)
+    return opponent_to_rgb(original + residual * np.array([luma, chroma, chroma], dtype=np.float32))
 
 
 def uses_sensor_stage(image: ImageData, settings: Settings) -> bool:

@@ -110,7 +110,7 @@ Doppio clic su un cursore: torna al valore consigliato. *Modifica → Annulla* (
 
 ![Pannello di DRUNet con stato del modello e della scheda video](screenshots/05-intelligenza-artificiale.jpg)
 
-DRUNet e SCUNet sono reti neurali che girano interamente sul tuo computer.
+DRUNet, SCUNet, Restormer e RawNIND sono reti neurali che girano interamente sul tuo computer.
 
 - La prima volta che le scegli, il pannello (o un avviso cliccabile nell'anteprima) propone di
   **scaricare il modello** dalla pubblicazione ufficiale. Il file viene verificato con un'impronta
@@ -120,8 +120,13 @@ DRUNet e SCUNet sono reti neurali che girano interamente sul tuo computer.
 - Con una scheda video l'elaborazione richiede pochi secondi; con il solo processore anche
   alcuni minuti per foto. L'esportazione si può interrompere con `Esc`.
 - **DRUNet** usa il rumore misurato: i cursori funzionano come per gli altri metodi.
-  **SCUNet** stima il rumore da sola: lì «Grana» e «Macchie di colore» decidono quanto del suo
-  risultato usare (1 = tutto).
+  **SCUNet**, **Restormer** e **RawNIND** stimano il rumore da sole: lì «Grana» e «Macchie di
+  colore» decidono quanto del loro risultato usare (1 = tutto).
+- Quale scegliere: **DRUNet** è il più pulito e la scelta predefinita per i RAW. **RawNIND**, addestrata
+  su RAW veri di reflex e mirrorless, conserva più dettaglio e un aspetto più naturale, lasciando un
+  filo di grana nelle ombre; è veloce anche senza scheda video. **Restormer** dà un risultato molto
+  pulito ma tende ad ammorbidire i dettagli finissimi ed è lenta: senza scheda video può richiedere
+  molti minuti per foto. Con i RAW rende meglio con *Quando ridurre* su «Dopo lo sviluppo». **SCUNet** resta indicata per JPG e smartphone.
 
 ## Sviluppo dei RAW
 
@@ -187,6 +192,8 @@ Il menu **Punto di partenza** (e il menu *Preset*) offre impostazioni pronte:
 | Solo colore | Togliere solo le macchie di colore, lasciando la grana |
 | Neurale RAW (DRUNet) | Massima qualità sui RAW |
 | Neurale JPG (SCUNet) | JPG e foto da smartphone |
+| Neurale RAW naturale (RawNIND) | RAW con più dettaglio e aspetto naturale |
+| Neurale molto pulito (Restormer) | Risultato molto pulito (meglio con scheda video) |
 
 Quando modifichi un preset il nome diventa «(modificato)». *Salva come preset…* salva le
 impostazioni attuali scegliendo quali sezioni includere (riduzione del rumore, sviluppo, luminosità,

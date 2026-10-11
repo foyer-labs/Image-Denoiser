@@ -23,7 +23,13 @@ import numpy as np
 import onnxruntime as ort
 import pytest
 
-from denoiser.neural.architectures import build_drunet, relative_position_bias, shifted_window_mask, swin_block
+from denoiser.neural.architectures import (
+    build_drunet,
+    build_restormer,
+    relative_position_bias,
+    shifted_window_mask,
+    swin_block,
+)
 from denoiser.neural.checkpoint import CheckpointError, load_state_dict
 from denoiser.neural.graph import GraphBuilder
 from denoiser.neural.tiling import run_tiled
@@ -315,13 +321,131 @@ def test_tiling_identity_is_exact(shape):
     assert all(s[1:] == (64, 64) for s in calls)
 
 
+# ----------------------------------------------------------------------------- Restormer
+
+
+def _depthwise3(x, w):
+    xp = np.pad(x, ((0, 0), (0, 0), (1, 1), (1, 1)))
+    out = np.zeros_like(x, dtype=np.float64)
+    for i in range(3):
+        for j in range(3):
+            out += xp[:, :, i : i + x.shape[2], j : j + x.shape[3]] * w[None, :, 0, i, j, None, None]
+    return out
+
+
+def _gelu(x):
+    from math import erf
+
+    return 0.5 * x * (1 + np.vectorize(erf)(x / np.sqrt(2)))
+
+
+def restormer_reference(sd, x0, blocks=(1, 1, 1, 1), refinement=1):
+    """Come Restormer.forward (basicsr/models/archs/restormer_arch.py), con LayerNorm BiasFree."""
+
+    def norm(x, w):
+        mu = x.mean(1, keepdims=True)
+        var = ((x - mu) ** 2).mean(1, keepdims=True)
+        return x / np.sqrt(var + 1e-5) * w[None, :, None, None]
+
+    def block(x, p):
+        n, c, h, w = x.shape
+        heads = sd[f"{p}.attn.temperature"].shape[0]
+        y = norm(x, sd[f"{p}.norm1.body.weight"])
+        qkv = _depthwise3(conv2d(y, sd[f"{p}.attn.qkv.weight"]), sd[f"{p}.attn.qkv_dwconv.weight"])
+        q, k, v = (a.reshape(heads, c // heads, h * w) for a in np.split(qkv[0], 3))
+        q = q / np.maximum(np.linalg.norm(q, axis=-1, keepdims=True), 1e-12)
+        k = k / np.maximum(np.linalg.norm(k, axis=-1, keepdims=True), 1e-12)
+        attn = q @ k.transpose(0, 2, 1) * sd[f"{p}.attn.temperature"]
+        attn = np.exp(attn - attn.max(-1, keepdims=True))
+        attn /= attn.sum(-1, keepdims=True)
+        out = (attn @ v).reshape(1, c, h, w)
+        x = x + conv2d(out, sd[f"{p}.attn.project_out.weight"])
+        y = norm(x, sd[f"{p}.norm2.body.weight"])
+        y = _depthwise3(conv2d(y, sd[f"{p}.ffn.project_in.weight"]), sd[f"{p}.ffn.dwconv.weight"])
+        a, b = np.split(y, 2, axis=1)
+        return x + conv2d(_gelu(a) * b, sd[f"{p}.ffn.project_out.weight"])
+
+    def level(x, name, count):
+        for i in range(count):
+            x = block(x, f"{name}.{i}")
+        return x
+
+    def unshuffle(x):  # torch.nn.PixelUnshuffle(2)
+        n, c, h, w = x.shape
+        return x.reshape(n, c, h // 2, 2, w // 2, 2).transpose(0, 1, 3, 5, 2, 4).reshape(n, c * 4, h // 2, w // 2)
+
+    def shuffle(x):  # torch.nn.PixelShuffle(2)
+        n, c, h, w = x.shape
+        return x.reshape(n, c // 4, 2, 2, h, w).transpose(0, 1, 4, 2, 5, 3).reshape(n, c // 4, h * 2, w * 2)
+
+    e1 = level(conv2d(x0, sd["patch_embed.proj.weight"], pad=1), "encoder_level1", blocks[0])
+    e2 = level(unshuffle(conv2d(e1, sd["down1_2.body.0.weight"], pad=1)), "encoder_level2", blocks[1])
+    e3 = level(unshuffle(conv2d(e2, sd["down2_3.body.0.weight"], pad=1)), "encoder_level3", blocks[2])
+    lat = level(unshuffle(conv2d(e3, sd["down3_4.body.0.weight"], pad=1)), "latent", blocks[3])
+    d3 = np.concatenate([shuffle(conv2d(lat, sd["up4_3.body.0.weight"], pad=1)), e3], 1)
+    d3 = level(conv2d(d3, sd["reduce_chan_level3.weight"]), "decoder_level3", blocks[2])
+    d2 = np.concatenate([shuffle(conv2d(d3, sd["up3_2.body.0.weight"], pad=1)), e2], 1)
+    d2 = level(conv2d(d2, sd["reduce_chan_level2.weight"]), "decoder_level2", blocks[1])
+    d1 = level(np.concatenate([shuffle(conv2d(d2, sd["up2_1.body.0.weight"], pad=1)), e1], 1), "decoder_level1", blocks[0])
+    d1 = level(d1, "refinement", refinement)
+    return conv2d(d1, sd["output.weight"], pad=1) + x0
+
+
+def tiny_restormer_weights(rng, dim=8):
+    sd = OrderedDict()
+
+    def w(o, i, k=1):
+        return (rng.standard_normal((o, i, k, k)) * np.sqrt(1 / (i * k * k))).astype(np.float32)
+
+    def blocks(name, c, heads, count=1):
+        hidden = int(c * 2.66)
+        for i in range(count):
+            p = f"{name}.{i}"
+            sd[f"{p}.norm1.body.weight"] = (1 + 0.1 * rng.standard_normal(c)).astype(np.float32)
+            sd[f"{p}.attn.temperature"] = (1 + 0.2 * rng.random((heads, 1, 1))).astype(np.float32)
+            sd[f"{p}.attn.qkv.weight"] = w(3 * c, c)
+            sd[f"{p}.attn.qkv_dwconv.weight"] = (rng.standard_normal((3 * c, 1, 3, 3)) / 3).astype(np.float32)
+            sd[f"{p}.attn.project_out.weight"] = w(c, c)
+            sd[f"{p}.norm2.body.weight"] = (1 + 0.1 * rng.standard_normal(c)).astype(np.float32)
+            sd[f"{p}.ffn.project_in.weight"] = w(2 * hidden, c)
+            sd[f"{p}.ffn.dwconv.weight"] = (rng.standard_normal((2 * hidden, 1, 3, 3)) / 3).astype(np.float32)
+            sd[f"{p}.ffn.project_out.weight"] = w(c, hidden)
+
+    sd["patch_embed.proj.weight"] = w(dim, 3, 3)
+    blocks("encoder_level1", dim, 1)
+    sd["down1_2.body.0.weight"] = w(dim // 2, dim, 3)
+    blocks("encoder_level2", dim * 2, 2)
+    sd["down2_3.body.0.weight"] = w(dim, dim * 2, 3)
+    blocks("encoder_level3", dim * 4, 4)
+    sd["down3_4.body.0.weight"] = w(dim * 2, dim * 4, 3)
+    blocks("latent", dim * 8, 8)
+    sd["up4_3.body.0.weight"] = w(dim * 16, dim * 8, 3)
+    sd["reduce_chan_level3.weight"] = w(dim * 4, dim * 8)
+    blocks("decoder_level3", dim * 4, 4)
+    sd["up3_2.body.0.weight"] = w(dim * 8, dim * 4, 3)
+    sd["reduce_chan_level2.weight"] = w(dim * 2, dim * 4)
+    blocks("decoder_level2", dim * 2, 2)
+    sd["up2_1.body.0.weight"] = w(dim * 4, dim * 2, 3)
+    blocks("decoder_level1", dim * 2, 1)
+    blocks("refinement", dim * 2, 1)
+    sd["output.weight"] = w(3, dim * 2, 3)
+    return sd
+
+
+def test_restormer_graph_matches_reference():
+    rng = np.random.default_rng(3)
+    sd = tiny_restormer_weights(rng)
+    x = rng.random((1, 3, 16, 16)).astype(np.float32)
+    np.testing.assert_allclose(_run(build_restormer(sd, 16), x), restormer_reference(sd, x), rtol=1e-3, atol=1e-4)
+
+
 # ----------------------------------------------------------------------------- pesi reali (opzionale)
 
 _WEIGHTS = os.environ.get("DENOISER_TEST_WEIGHTS")
 
 
 @pytest.mark.skipif(not _WEIGHTS, reason="pesi reali non disponibili")
-@pytest.mark.parametrize("key,minimum", [("drunet", 31.0), ("scunet", 29.5)])
+@pytest.mark.parametrize("key,minimum", [("drunet", 31.0), ("scunet", 29.5), ("restormer", 26.5)])
 def test_real_models_denoise(tmp_path, monkeypatch, key, minimum):
     from skimage.metrics import peak_signal_noise_ratio as psnr
 

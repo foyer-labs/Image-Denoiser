@@ -27,8 +27,8 @@ Nessun abbonamento, nessun caricamento nel cloud: la foto non lascia mai il PC.
 - **Misura il rumore sulla foto stessa**: nessun profilo per fotocamera. Con «Grana» = 1 viene tolto
   esattamente il rumore misurato.
 - **Separa grana e macchie di colore**, con cursori indipendenti.
-- **Cinque metodi**, tre classici e due reti neurali (DRUNet e SCUNet) che girano in locale, sulla scheda
-  video se disponibile.
+- **Sette metodi**, tre classici e quattro reti neurali (DRUNet, SCUNet, Restormer e RawNIND) che girano
+  in locale, sulla scheda video se disponibile.
 - **Anteprima immediata al 100%** con tendina prima/dopo e vista del «rumore tolto» per controllare
   di non perdere dettaglio; con la foto rimpicciolita, risultato calcolato sulla **foto intera**.
 - **Salva in TIFF, PNG, JPEG o DNG**, conservando metadati (EXIF, GPS, parole chiave…) e profilo colore.
@@ -78,9 +78,12 @@ Ogni pulsante mostra la propria scorciatoia, e `F1` apre la guida con l'elenco c
 | **Non-Local Means** | Trame fini (tessuti, foglie) | ●●●○○ |
 | **DRUNet (IA)** | Massima qualità sui RAW ad ISO alti | ●●○○○ con GPU, ●○○○○ senza |
 | **SCUNet (IA)** | JPG e foto da smartphone | ●●○○○ con GPU, ●○○○○ senza |
+| **RawNIND (IA)** | RAW di reflex e mirrorless: più dettaglio, aspetto naturale | ●●●○○ con GPU, ●●○○○ senza |
+| **Restormer (IA)** | Risultato molto pulito, anche su JPG | ●○○○○ con GPU, molto lento senza |
 
 I modelli neurali non sono inclusi: l'app li scarica la prima volta dalle pubblicazioni ufficiali
-(DRUNet 125 MB, SCUNet 69 MB), li verifica e da quel momento funziona offline.
+(DRUNet 125 MB, SCUNet 69 MB, Restormer 100 MB, RawNIND 55 MB), li verifica e da quel momento funziona
+offline.
 Misure di qualità e dettagli tecnici: **[come funziona](docs/come-funziona.md)**.
 
 ## Documentazione

@@ -9,7 +9,7 @@ con `pip` il comando si chiama `denoiser`. Le opzioni sono le stesse.
 denoiser-cli elabora FOTO_O_CARTELLE... [opzioni]   # riduce il rumore e salva
 denoiser-cli analizza FOTO                          # informazioni e rumore stimato
 denoiser-cli algoritmi                              # metodi e relativi parametri
-denoiser-cli modelli elenca | scarica [drunet|scunet|tutti]
+denoiser-cli modelli elenca | scarica [drunet|scunet|restormer|rawnind|tutti]
 denoiser-cli preset elenca | salva NOME [opzioni]
 denoiser-cli --version
 ```
@@ -41,7 +41,7 @@ denoiser-cli elabora D:\Foto\Notte --preset "Notturne Z5"
 | Opzione | Significato |
 |---|---|
 | `--preset NOME` | Nome di un preset (`preset elenca`) o percorso di un file `.json` |
-| `--algoritmo` | `wavelet` (predefinito), `nlm`, `bilateral`, `drunet`, `scunet` |
+| `--algoritmo` | `wavelet` (predefinito), `nlm`, `bilateral`, `drunet`, `scunet`, `restormer`, `rawnind` |
 | `--luminanza F` | Forza sulla grana: 0 = disattivata, 1 = rumore misurato |
 | `--colore F` | Forza sulle macchie di colore |
 | `--dettaglio F` | Dettaglio originale reintrodotto, da 0 a 1 |

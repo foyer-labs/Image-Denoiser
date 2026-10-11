@@ -5,6 +5,27 @@ Tutte le modifiche rilevanti, dalla più recente. Formato ispirato a
 
 ## [Non rilasciato]
 
+## [0.11.0] - 2026-10-11
+
+### Aggiunto
+
+- **RawNIND (IA)**: rete di Brummer e De Vleeschouwer (UCLouvain, 2025) addestrata su coppie vere
+  di RAW rumorosi e puliti di reflex e mirrorless. Lavora direttamente sui dati del sensore,
+  conserva molto dettaglio e un aspetto naturale ed è veloce anche senza scheda video. Il risultato
+  torna sui fotositi, quindi sviluppo, bilanciamento del bianco e DNG dei dati del sensore restano
+  quelli dell'app. Dopo lo sviluppo, per i sensori non Bayer e per i JPG, usa la sua versione su
+  RGB lineare. Modello ONNX scaricato al primo uso dalle release di darktable (55 MB, pesi CC BY 4.0).
+- **Restormer (IA)**: rete *transformer* di Zamir e altri (CVPR 2022) addestrata su rumore reale.
+  Dà un risultato molto pulito ma è lenta e conviene con una scheda video; con i RAW rende meglio
+  «Dopo lo sviluppo». Pesi ufficiali (100 MB, MIT) convertiti in ONNX sul computer, senza PyTorch.
+- Preset «Neurale RAW naturale (RawNIND)» e «Neurale molto pulito (Restormer)».
+- Confronto delle reti con il rumore misurato su una Nikon D5100 nella pagina «Come funziona».
+
+### Corretto
+
+- Le regolazioni avanzate del metodo precedente non restano più visibili per un istante quando si
+  cambia metodo.
+
 ## [0.10.1] - 2026-10-11
 
 ### Corretto
@@ -103,7 +124,8 @@ Codice distribuito con licenza MIT.
 - Correzioni di memoria, concorrenza, cache e gestione degli errori; registro degli errori in
   `%LOCALAPPDATA%\Denoiser\errori.log`.
 
-[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.10.1...HEAD
+[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.3...v0.10.0
 [0.9.3]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.2...v0.9.3

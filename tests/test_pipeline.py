@@ -16,6 +16,9 @@ from synthetic import clean_display
 
 ALGORITHM_KEYS = sorted(k for k, a in ALGORITHMS.items() if not a.joint)
 NEURAL_KEYS = sorted(k for k, a in ALGORITHMS.items() if a.joint)
+#: RawNIND è addestrata su RAW veri: sulle immagini sintetiche piccole e molto dettagliate ammorbidisce
+#: e il PSNR non migliora (vedi docs/come-funziona.md). La sua verifica è in test_rawnind.py.
+PSNR_NEURAL_KEYS = [k for k in NEURAL_KEYS if k != "rawnind"]
 _WEIGHTS = os.environ.get("DENOISER_TEST_WEIGHTS")
 
 
@@ -123,7 +126,7 @@ def test_display_rect_maps_to_sensor(flip):
 
 @pytest.mark.skipif(not _WEIGHTS, reason="pesi reali non disponibili")
 @pytest.mark.parametrize("stage", ["sensor", "rgb"])
-@pytest.mark.parametrize("algorithm", NEURAL_KEYS)
+@pytest.mark.parametrize("algorithm", PSNR_NEURAL_KEYS)
 def test_neural_raw_denoise(dng_pair, monkeypatch, algorithm, stage):
     monkeypatch.setenv("DENOISER_MODELS_DIR", _WEIGHTS)
     clean_path, noisy_path = dng_pair

@@ -249,7 +249,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("modelli", help="elenca o scarica i modelli neurali")
     p.add_argument("azione", choices=("elenca", "scarica"))
-    p.add_argument("modello", nargs="?", help="drunet, scunet o tutti (predefinito)")
+    p.add_argument("modello", nargs="?", help="drunet, scunet, restormer, rawnind o tutti (predefinito)")
     p.set_defaults(func=_cmd_modelli)
 
     p = sub.add_parser("preset", help="elenca o salva preset")

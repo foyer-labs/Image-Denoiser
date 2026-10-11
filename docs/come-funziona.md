@@ -90,14 +90,19 @@ applicato, e i file CMYK vengono convertiti in RGB.
 | **Bilaterale** | Media i vicini simili per posizione e valore | Molto veloce |
 | **DRUNet** | Rete neurale U-Net che riceve la mappa del rumore misurato | Qualità massima sui RAW |
 | **SCUNet** | Rete con attenzione Swin, addestrata su rumore reale; stima il rumore da sola | JPG e smartphone |
+| **Restormer** | Rete *transformer* con attenzione tra i canali, addestrata su rumore reale (SIDD); stima il rumore da sola | Risultato molto pulito; lenta |
+| **RawNIND** | Rete U-Net addestrata su coppie vere di RAW rumorosi e puliti di reflex e mirrorless; lavora sui dati del sensore | Dettaglio e aspetto naturali sui RAW; veloce |
 
 `denoiser-cli algoritmi` elenca tutti i parametri di ciascun metodo.
 
 ## Reti neurali in locale
 
 - I modelli **non sono inclusi** nel programma: alla prima scelta vengono scaricati dalle release
-  ufficiali di [KAIR](https://github.com/cszn/KAIR) (DRUNet 125 MB, licenza MIT; SCUNet 69 MB,
-  licenza Apache 2.0), verificati con un'impronta SHA-256 e convertiti in ONNX sul computer.
+  ufficiali, verificati con un'impronta SHA-256 e convertiti in ONNX sul computer:
+  [KAIR](https://github.com/cszn/KAIR) per DRUNet (125 MB, MIT) e SCUNet (69 MB, Apache 2.0),
+  [Restormer](https://github.com/swz30/Restormer) (100 MB, MIT). RawNIND (55 MB) arriva già in ONNX
+  dal pacchetto pubblicato da [darktable](https://github.com/darktable-org/darktable-ai): l'app ne
+  estrae i due modelli, «bayer» e «lineare».
 - I file `.pth` vengono letti **senza PyTorch e senza eseguire codice** contenuto nel file
   (lettore pickle ristretto); i grafi ONNX sono ricostruiti a mano e confrontati nei test con
   implementazioni di riferimento.
@@ -108,7 +113,17 @@ applicato, e i file CMYK vengono convertiti in RGB.
 - Le reti lavorano su un'immagine a colori: al livello 3 i quattro piani diventano un'immagine RGB a
   metà risoluzione (verde = media dei due verdi), e la differenza tra i verdi viene ripulita a parte.
 - SCUNet non sa quanto rumore c'è: la sua miscela viene limitata in modo che non tolga più del
-  rumore misurato, per evitare che cambi toni e colori.
+  rumore misurato, per evitare che cambi toni e colori. Restormer funziona allo stesso modo; il suo
+  grafo è costruito per tasselli di misura fissa (256 o 512 px), perché l'attenzione è calcolata
+  sull'intero tassello.
+- **RawNIND** non passa dalla trasformata stabilizzante: al livello 3 riceve i quattro piani del
+  sensore (nero = 0, bianco = 1, senza bilanciamento del bianco) e restituisce l'immagine a piena
+  risoluzione, che viene ricampionata sui fotositi (ogni fotosito riprende il suo colore). Lo sviluppo
+  resta quello dell'app: demosaicizzazione scelta, bilanciamento del bianco e DNG dei dati del
+  sensore funzionano come con gli altri metodi. Al livello 2, per i sensori non Bayer e per i JPG,
+  si usa il modello «lineare» su RGB lineare Rec. 2020. La rete restituisce i valori a una scala
+  propria, riportata a quella dell'ingresso tassello per tassello. Se il sensore non inizia con un
+  fotosito rosso, si parte dal primo rosso: la prima riga o colonna della foto resta com'è.
 - I modelli si trovano in `%LOCALAPPDATA%\Denoiser\modelli` (oppure nella cartella indicata da
   `DENOISER_MODELS_DIR`).
 
@@ -134,6 +149,19 @@ Altre verifiche:
   0,08 con DRUNet.
 - Con rumore molto basso il guadagno si riduce: a ISO bassi SCUNet può rendere meno dell'originale,
   mentre wavelet e DRUNet restano sopra.
+
+Confronto delle reti neurali con il rumore misurato su una Nikon D5100 (DNG Bayer sintetici, media su
+cinque immagini; PSNR in dB):
+
+| | Rumoroso | DRUNet (liv. 3) | Restormer (liv. 2) | Restormer (liv. 3) | RawNIND (liv. 3) | RawNIND (liv. 2) |
+|---|---|---|---|---|---|---|
+| ISO 3200 | 27,1 | **31,3** | 30,0 | 28,2 | 26,9 | 26,7 |
+| ISO 6400 | 23,8 | **29,3** | 28,2 | 26,2 | 26,2 | 25,8 |
+
+RawNIND qui ammorbidisce: le immagini di prova sono piccole e con dettaglio fittissimo a livello di
+pixel, diverso da quello dei RAW su cui è addestrata. Sui RAW veri (per esempio un NEF a ISO 3200) è
+invece il metodo che conserva più dettaglio e l'aspetto più naturale: per questo metodo conta il
+giudizio a occhio più del numero.
 
 Sono misure su immagini sintetiche, utili per confrontare i metodi e verificare le correzioni;
 le foto reali vanno sempre giudicate a occhio, al 100%.

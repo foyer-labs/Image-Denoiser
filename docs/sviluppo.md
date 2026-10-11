@@ -35,7 +35,7 @@ src/denoiser/
 ├── color.py            trasformazioni di colore (opponente, sRGB)
 ├── batch.py            esportazione atomica ed elaborazione di più file
 ├── algorithms/         wavelet, nlm, bilateral, neural (interfaccia comune Denoiser/Param)
-├── neural/             lettura sicura dei .pth, grafi ONNX di DRUNet e SCUNet, tasselli, runtime, download
+├── neural/             lettura sicura dei .pth, grafi ONNX di DRUNet, SCUNet e Restormer, tasselli, runtime, download
 ├── io/                 lettura (RAW, JPG/PNG/TIFF, DNG Converter), scrittura (TIFF/PNG/JPEG/DNG), metadati
 └── gui/                interfaccia PySide6
     ├── main_window.py  finestra, menu, anteprima, esportazione, annulla/ripeti

@@ -43,6 +43,16 @@ BUILTIN_PRESETS: dict[str, tuple[str, dict[str, Any]]] = {
         "Intelligenza artificiale addestrata su foto reali: ideale per JPG e smartphone.",
         {"denoise": {"algorithm": "scunet", "luma_strength": 1.0, "chroma_strength": 1.0, "detail": 0.0}},
     ),
+    "Neurale RAW naturale (RawNIND)": (
+        "Intelligenza artificiale addestrata su RAW veri di reflex e mirrorless: più dettaglio, aspetto "
+        "naturale, veloce.",
+        {"denoise": {"algorithm": "rawnind", "luma_strength": 1.0, "chroma_strength": 1.0, "detail": 0.0}},
+    ),
+    "Neurale molto pulito (Restormer)": (
+        "Intelligenza artificiale addestrata su rumore reale: risultato molto pulito. Lenta senza scheda video.",
+        {"denoise": {"algorithm": "restormer", "luma_strength": 1.0, "chroma_strength": 1.0, "detail": 0.0,
+                     "raw_stage": "rgb"}},
+    ),
 }
 
 #: Sezioni che un preset dell'utente può contenere, con etichetta italiana.

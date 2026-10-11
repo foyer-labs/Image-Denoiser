@@ -436,6 +436,7 @@ class SettingsPanel(QWidget):
     def _rebuild_algorithm_form(self) -> None:
         if self.algo_form is not None:
             self.algo_layout.removeWidget(self.algo_form)
+            self.algo_form.hide()  # sparisce subito, anche prima che Qt lo elimini davvero
             self.algo_form.deleteLater()
         algorithm = get_algorithm(self.algorithm.currentData())
         values = self._params_by_algorithm.get(algorithm.key, {})

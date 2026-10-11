@@ -2,7 +2,8 @@
 
 I pesi non sono inclusi nell'applicazione: vengono scaricati una sola volta dalle release
 ufficiali, controllati con un'impronta SHA-256 e convertiti in ONNX sul computer
-dell'utente. Da quel momento tutto funziona offline.
+dell'utente (oppure, per RawNIND, estratti dal pacchetto ONNX pubblicato da darktable).
+Da quel momento tutto funziona offline.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import os
 import tempfile
 import threading
 import urllib.request
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -34,6 +36,12 @@ class ModelSpec:
     noise_level_input: bool
     #: Multiplo richiesto per le dimensioni dei tasselli.
     multiple: int
+    #: Sovrapposizione tra i tasselli (pixel).
+    overlap: int = 32
+    #: Il grafo dipende dalla misura del tassello (attenzione su finestre o sull'intero tassello).
+    fixed_tile: bool = False
+    #: "pth": pesi PyTorch da convertire; "dtmodel": pacchetto ONNX di darktable (zip).
+    kind: str = "pth"
 
 
 MODELS: dict[str, ModelSpec] = {
@@ -64,8 +72,45 @@ MODELS: dict[str, ModelSpec] = {
         ),
         noise_level_input=False,
         multiple=64,
+        overlap=16,
+        fixed_tile=True,
+    ),
+    "restormer": ModelSpec(
+        key="restormer",
+        label="Restormer",
+        url="https://github.com/swz30/Restormer/releases/download/v1.0/real_denoising.pth",
+        sha256="4cae18bed8a291b9a5deeeab48756bbe6f61fcf7f31a4cca0969b24608601387",
+        size_mb=100,
+        license="MIT (Restormer, Syed Waqas Zamir et al.)",
+        description=(
+            "Intelligenza artificiale (Zamir et al., 2022) addestrata su rumore reale: stima da sola il "
+            "rumore e dà un risultato molto pulito; più lenta di DRUNet. La forza miscela il risultato "
+            "con l'originale."
+        ),
+        noise_level_input=False,
+        multiple=8,
+        fixed_tile=True,
+    ),
+    "rawnind": ModelSpec(
+        key="rawnind",
+        label="RawNIND",
+        url="https://github.com/darktable-org/darktable-ai/releases/download/release-5.6.0/rawdenoise-nind.dtmodel",
+        sha256="d71b5f1e727c85a359e6f74dca9e2016c9d8fc3e2f7ac3e9b347d80ceca969af",
+        size_mb=55,
+        license="CC BY 4.0 / GPL-3.0 (pesi RawNIND, Benoit Brummer, UCLouvain; ONNX di darktable)",
+        description=(
+            "Intelligenza artificiale (Brummer e De Vleeschouwer, 2025) addestrata su coppie di foto vere di "
+            "reflex e mirrorless: lavora direttamente sui dati del sensore, conserva molto dettaglio ed è "
+            "veloce. La forza miscela il risultato con l'originale."
+        ),
+        noise_level_input=False,
+        multiple=8,
+        kind="dtmodel",
     ),
 }
+
+#: File ONNX contenuti nel pacchetto di RawNIND: Bayer (dati del sensore) e lineare (RGB già sviluppato).
+RAWNIND_VARIANTS = {"bayer": "model_bayer.onnx", "linear": "model_linear.onnx"}
 
 
 class ModelNotAvailableError(RuntimeError):
@@ -91,8 +136,10 @@ def weights_path(spec: ModelSpec) -> Path:
     return models_dir() / Path(spec.url).name
 
 
-def onnx_path(spec: ModelSpec, tile: int | None = None) -> Path:
-    suffix = f"_{tile}" if tile and spec.key == "scunet" else ""
+def onnx_path(spec: ModelSpec, tile: int | None = None, variant: str = "") -> Path:
+    suffix = f"_{variant}" if variant else ""
+    if tile and spec.fixed_tile:
+        suffix += f"_{tile}"
     return models_dir() / f"{spec.key}{suffix}.onnx"
 
 
@@ -145,13 +192,14 @@ _CONVERT_LOCKS: dict[Path, threading.Lock] = {}
 _LOCKS_GUARD = threading.Lock()
 
 
-def ensure_onnx(spec: ModelSpec, tile: int, progress: ProgressFn | None = None) -> Path:
+def ensure_onnx(spec: ModelSpec, tile: int, progress: ProgressFn | None = None, variant: str = "") -> Path:
     """Restituisce il modello ONNX, convertendolo dai pesi originali alla prima occorrenza.
 
     Anteprima ed esportazione possono chiederlo insieme: un blocco per file evita due conversioni
-    in parallelo, e il file definitivo compare solo quando è completo.
+    in parallelo, e il file definitivo compare solo quando è completo. ``variant``: per i pacchetti
+    con più modelli (RawNIND: "bayer" o "linear").
     """
-    path = onnx_path(spec, tile)
+    path = onnx_path(spec, tile, variant)
     if path.is_file():
         return path
     if not is_downloaded(spec):
@@ -161,13 +209,18 @@ def ensure_onnx(spec: ModelSpec, tile: int, progress: ProgressFn | None = None) 
     with lock:
         if path.is_file():  # convertito da un altro lavoro mentre si aspettava
             return path
-        from .architectures import build_drunet, build_scunet
-        from .checkpoint import load_state_dict
-
         if progress is not None:
             progress(0.0, f"Preparazione di {spec.label} (solo la prima volta)…")
-        state = load_state_dict(weights_path(spec))
-        model = build_drunet(state) if spec.key == "drunet" else build_scunet(state, tile)
+        if spec.kind == "dtmodel":
+            model = _extract_dtmodel(weights_path(spec), RAWNIND_VARIANTS[variant])
+        else:
+            from .architectures import build_drunet, build_restormer, build_scunet
+            from .checkpoint import load_state_dict
+
+            state = load_state_dict(weights_path(spec))
+            builders = {"drunet": lambda: build_drunet(state), "scunet": lambda: build_scunet(state, tile),
+                        "restormer": lambda: build_restormer(state, tile)}
+            model = builders[spec.key]()
         onnx.checker.check_model(model)
         fd, tmp_name = tempfile.mkstemp(suffix=".tmp", dir=path.parent)
         os.close(fd)
@@ -178,3 +231,12 @@ def ensure_onnx(spec: ModelSpec, tile: int, progress: ProgressFn | None = None) 
         finally:
             tmp.unlink(missing_ok=True)
     return path
+
+
+def _extract_dtmodel(package: Path, member: str) -> onnx.ModelProto:
+    """Legge un modello ONNX dal pacchetto di darktable (zip con config.json e i file .onnx)."""
+    with zipfile.ZipFile(package) as zf:
+        name = next((n for n in zf.namelist() if n.endswith("/" + member) or n == member), None)
+        if name is None:
+            raise RuntimeError(f"Il pacchetto {package.name} non contiene {member}")
+        return onnx.load_model_from_string(zf.read(name))

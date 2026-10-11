@@ -162,6 +162,23 @@ def denoise_sensor_region(
     if settings.hot_pixel_threshold > 0:
         stacked = _remove_hot_pixels(stacked, settings.hot_pixel_threshold)
 
+    if getattr(algorithm, "raw_model", False):
+        # Reti addestrate sui dati grezzi (RawNIND): niente trasformata, lavorano sul mosaico normalizzato.
+        if settings.hot_pixel_threshold > 0:
+            # Solo i pixel caldi sostituiti (con la mediana dei vicini, un valore già «pulito») tornano
+            # dalla trasformata; gli altri restano i dati originali, senza passare per l'inversa.
+            stab_all = np.stack(stab, axis=-1)
+            norm = [
+                np.where(stacked[..., k] != stab_all[..., k],
+                         _unstabilize(stacked[..., k], float(model.a[c]), float(model.b[c])), norm[k])
+                for k, c in enumerate(layout.rgb)
+            ]
+        planes = _raw_model_denoise(norm, layout, algorithm, settings, progress)
+        for (i, j, black), plane in zip(layout.planes, planes):
+            span = max(layout.white - black, 1.0)
+            block[i::2, j::2] = np.clip(np.round(plane * span + black), 0, 65535).astype(visible.dtype)
+        return
+
     weights = layout.weights()
     stacked = stacked * weights
     if algorithm.joint:
@@ -205,6 +222,42 @@ def _packed_denoise(
             cleaned = cleaned + settings.detail * (original - cleaned)
         comps[..., k] = cleaned
     return comps @ _PACKED  # trasformazione ortonormale: l'inversa è la trasposta
+
+
+def _raw_model_denoise(
+    norm: list[np.ndarray],
+    layout: "BayerLayout",
+    algorithm: Denoiser,
+    settings: DenoiseSettings,
+    progress: Callable[[float, str], None] | None,
+) -> list[np.ndarray]:
+    """Rete sui dati grezzi (RawNIND): ``norm`` sono i piani R, G1, G2, B (nero = 0, bianco = 1).
+
+    La rete vuole un mosaico RGGB: se il sensore ha un altro ordine si parte dal primo fotosito rosso
+    (la prima riga o colonna resta com'è). Il risultato si dosa come per le altre reti «cieche»:
+    luminanza e colore separati, con forza massima 1 e recupero del dettaglio sulla luminanza.
+    """
+    h, w = norm[0].shape
+    mosaic = np.empty((2 * h, 2 * w), dtype=np.float32)
+    for (i, j, _black), plane in zip(layout.planes, norm):
+        mosaic[i::2, j::2] = plane
+    ri, rj, _ = layout.planes[0]
+    sub_h, sub_w = (2 * h - ri) & ~1, (2 * w - rj) & ~1
+    sub = mosaic[ri : ri + sub_h, rj : rj + sub_w]
+    packed = np.stack([sub[0::2, 0::2], sub[0::2, 1::2], sub[1::2, 0::2], sub[1::2, 1::2]])
+    cleaned = algorithm.denoise_mosaic(packed, settings.params, progress)
+
+    # Miscela in luminanza e colore (piani bilanciati, così un grigio resta nella sola luminanza).
+    # Pesi del bilanciamento nell'ordine R, G, G, B del mosaico RGGB.
+    wb = np.array([layout.wb[0], 1.0, 1.0, layout.wb[3]], dtype=np.float32)[:, None, None]
+    residual = np.tensordot(_PACKED, (cleaned - packed) * wb, axes=(1, 0))
+    luma = min(settings.luma_strength, 1.0) * (1.0 - min(max(settings.detail, 0.0), 1.0))
+    chroma = min(settings.chroma_strength, 1.0)
+    residual *= np.array([luma, chroma, chroma, chroma], dtype=np.float32)[:, None, None]
+    packed = packed + np.tensordot(_PACKED.T, residual, axes=(1, 0)) / wb
+
+    sub[0::2, 0::2], sub[0::2, 1::2], sub[1::2, 0::2], sub[1::2, 1::2] = packed
+    return [mosaic[i::2, j::2] for i, j, _black in layout.planes]
 
 
 def _joint_sensor_denoise(

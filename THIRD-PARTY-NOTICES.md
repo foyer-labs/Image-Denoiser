@@ -35,6 +35,11 @@ essere sostituite con versioni compatibili.
 |---|---|---|---|
 | DRUNet (`drunet_color.pth`, 125 MB) | Kai Zhang et al., *Plug-and-Play Image Restoration with Deep Denoiser Prior*, IEEE TPAMI 2021 | [cszn/KAIR](https://github.com/cszn/KAIR) | MIT |
 | SCUNet (`scunet_color_real_psnr.pth`, 69 MB) | Kai Zhang et al., *Practical Blind Image Denoising via Swin-Conv-UNet and Data Synthesis*, Machine Intelligence Research 2023 | [cszn/SCUNet](https://github.com/cszn/SCUNet), file da [KAIR](https://github.com/cszn/KAIR/releases) | Apache-2.0 |
+| Restormer (`real_denoising.pth`, 100 MB) | Syed Waqas Zamir et al., *Restormer: Efficient Transformer for High-Resolution Image Restoration*, CVPR 2022 | [swz30/Restormer](https://github.com/swz30/Restormer/releases) | MIT |
+| RawNIND (`rawdenoise-nind.dtmodel`, 55 MB: modelli UtNet2 «bayer» e «lineare» in ONNX) | Benoit Brummer e Christophe De Vleeschouwer (UCLouvain), *Learning Joint Denoising, Demosaicing, and Compression from the Raw Natural Image Noise Dataset*, 2025 ([arXiv:2501.08924](https://arxiv.org/abs/2501.08924)) | Pesi: [trougnouf/rawnind_jddc](https://github.com/trougnouf/rawnind_jddc); conversione ONNX: [darktable-org/darktable-ai](https://github.com/darktable-org/darktable-ai/releases) | Pesi con doppia licenza CC BY 4.0 e GPL-3.0 (usati qui secondo CC BY 4.0, con attribuzione); il pacchetto ONNX di darktable è indicato come GPL-3.0 |
+
+Denoiser non ridistribuisce i modelli: li scarica sul computer dell'utente dalla fonte indicata. Il codice
+di Denoiser che li esegue è scritto in proprio (licenza MIT) e non contiene codice dei progetti originali.
 
 L'integrità di ogni file viene verificata con un'impronta SHA-256 prima dell'uso.
 
