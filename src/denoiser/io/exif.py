@@ -32,9 +32,20 @@ def read_basic_exif(path: Path) -> BasicExif:
     return info
 
 
+def camera_name(make: str, model: str) -> str:
+    """Nome leggibile: «NIKON CORPORATION» + «NIKON D5100» → «NIKON D5100» (marca non ripetuta)."""
+    make, model = make.strip(), model.strip()
+    brand = make.split()[0].lower() if make else ""
+    if not model:
+        return make
+    if not brand or model.lower().startswith(brand):
+        return model
+    return f"{make} {model}"
+
+
 def _finish(make: str, model: str, iso, date: str) -> BasicExif:
     info = BasicExif(make=make, model=model)
-    info.camera = model if model.lower().startswith(make.lower()) else f"{make} {model}".strip()
+    info.camera = camera_name(make, model)
     if isinstance(iso, (tuple, list)):
         iso = iso[0] if iso else None
     try:

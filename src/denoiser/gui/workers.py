@@ -50,7 +50,15 @@ class Task(QRunnable):
     def _progress(self, fraction: float, message: str) -> None:
         if self._cancel.is_set():
             raise Cancelled()
-        self.signals.progress.emit(float(fraction), message)
+        self._emit(self.signals.progress, float(fraction), message)
+
+    def _emit(self, signal, *args) -> None:
+        # Chiudendo l'app mentre un lavoro è in corso gli oggetti Qt possono essere già distrutti:
+        # il risultato non serve più a nessuno, quindi lo si scarta in silenzio.
+        try:
+            signal.emit(*args)
+        except RuntimeError:
+            self._cancel.set()
 
     def run(self) -> None:
         self.started_at = time.perf_counter()
@@ -61,12 +69,12 @@ class Task(QRunnable):
             # esiste già e va comunicato com'è.
             result = self._fn(*self._args, **self._kwargs)
         except Cancelled:
-            self.signals.cancelled.emit()
+            self._emit(self.signals.cancelled)
         except Exception as exc:  # mostrato all'utente
             detail = traceback.format_exc()
-            self.signals.failed.emit(str(exc) or exc.__class__.__name__, detail)
+            self._emit(self.signals.failed, str(exc) or exc.__class__.__name__, detail)
         else:
-            self.signals.finished.emit(result)
+            self._emit(self.signals.finished, result)
         finally:
             # Rilascia subito foto e array: il Task può restare referenziato più a lungo del lavoro.
             self._fn = None

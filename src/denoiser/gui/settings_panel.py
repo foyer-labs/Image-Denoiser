@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenu,
     QPushButton,
+    QSizePolicy,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -127,6 +128,9 @@ class SettingsPanel(QWidget):
         v.setSpacing(2)
         self.photo_title = QLabel("Nessuna foto aperta")
         self.photo_title.setObjectName("title")
+        # Un nome di file lungo va a capo (o viene tagliato) invece di allargare tutto il pannello.
+        self.photo_title.setWordWrap(True)
+        self.photo_title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.photo_details = hint_label("Apri una foto RAW, JPG, PNG o TIFF per iniziare.")
         self.photo_noise = QLabel()
         self.photo_noise.setWordWrap(True)
@@ -579,6 +583,7 @@ class SettingsPanel(QWidget):
             self._ctx = {"has_image": True, "is_raw": info["is_raw"], "is_bayer": info["is_bayer"],
                          "shot_wb": info.get("shot_wb")}
             self.photo_title.setText(info["title"])
+            self.photo_title.setToolTip(info["title"])
             self.photo_details.setText(info["details"])
             self.photo_noise.setText(info.get("noise", ""))
             self.photo_noise.setVisible(bool(info.get("noise")))

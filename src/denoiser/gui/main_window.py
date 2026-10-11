@@ -9,8 +9,8 @@ import time
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import QSettings, Qt, QThreadPool, QTimer, QUrl
-from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QKeySequence
+from PySide6.QtCore import QEvent, QSettings, Qt, QThreadPool, QTimer, QUrl
+from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QFontMetrics, QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -291,15 +291,20 @@ class MainWindow(QMainWindow):
         scroll.setWidget(self.panel)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Di norma non serve: la colonna si allarga quanto il contenuto (vedi _fit_dock). È solo una
+        # rete di sicurezza perché nulla resti mai nascosto.
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         container = QWidget()
         v = QVBoxLayout(container)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(0)
         v.addWidget(scroll, 1)
         v.addWidget(self.panel.explain)
-        # Il pannello non scorre in orizzontale: il riquadro è largo almeno quanto il suo contenuto.
-        container.setMinimumWidth(max(400, self.panel.minimumSizeHint().width() + scroll.verticalScrollBar().sizeHint().width() + 4))
+        self._dock_scroll, self._dock_container = scroll, container
+        # La larghezza necessaria si conosce solo dopo stile, carattere e scala dello schermo (su Windows
+        # Segoe UI e la scala al 125-150% cambiano tutto): la si ricalcola ogni volta che il pannello cambia.
+        self.panel.installEventFilter(self)
+        self._fit_dock()
         dock = QDockWidget("Impostazioni")
         dock.setObjectName("impostazioni")
         dock.setWidget(container)
@@ -1322,7 +1327,10 @@ class MainWindow(QMainWindow):
             if w is not None:
                 w.deleteLater()
         for p in items[:5]:
-            button = QPushButton(f"{Path(p).name}   —   {Path(p).parent}")
+            # Percorsi lunghi accorciati al centro: un pulsante largo allargherebbe tutta la finestra.
+            text = f"{Path(p).name}   —   {Path(p).parent}"
+            button = QPushButton(QFontMetrics(self.font()).elidedText(text, Qt.TextElideMode.ElideMiddle, 420))
+            button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
             button.setObjectName("link")
             button.setToolTip(p)
             button.clicked.connect(lambda _c=False, path=p: self.open_path(Path(path)))
@@ -1383,9 +1391,26 @@ class MainWindow(QMainWindow):
             signal.connect(lambda *_: self._tasks.discard(task))
         start(task)
 
+    def _fit_dock(self) -> None:
+        """La colonna delle impostazioni è larga almeno quanto il suo contenuto (niente tagliato a destra)."""
+        scroll = self._dock_scroll
+        needed = (self.panel.minimumSizeHint().width() + scroll.verticalScrollBar().sizeHint().width()
+                  + 2 * scroll.frameWidth() + 2)
+        if needed != self._dock_container.minimumWidth():
+            self._dock_container.setMinimumWidth(max(400, needed))
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 (API Qt)
+        if obj is self.panel and event.type() in (
+            QEvent.Type.LayoutRequest, QEvent.Type.Show, QEvent.Type.Polish, QEvent.Type.FontChange,
+            QEvent.Type.StyleChange, QEvent.Type.ScreenChangeInternal,
+        ):
+            QTimer.singleShot(0, self._fit_dock)
+        return super().eventFilter(obj, event)
+
     def showEvent(self, event) -> None:
         super().showEvent(event)
         dark_title_bar(self)
+        QTimer.singleShot(0, self._fit_dock)
 
     def closeEvent(self, event) -> None:
         if self._job is not None:

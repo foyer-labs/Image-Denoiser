@@ -6,6 +6,19 @@ Le versioni 0.x sono anteprime: la 1.0 arriverà dopo il collaudo sulle foto rea
 
 ## [Non rilasciato]
 
+## [0.9.1] - 2026-10-11
+
+### Corretto
+
+- Il pannello delle impostazioni poteva risultare tagliato a destra (caselle numeriche e menu
+  nascosti), per esempio su Windows con la scala dello schermo al 125–150% o spostando la finestra
+  su un altro monitor: ora la colonna si adegua sempre al contenuto, e se serve compare una barra di
+  scorrimento orizzontale.
+- Nomi di file lunghi nel pannello «Foto» e percorsi lunghi nei file recenti non allargano più la finestra.
+- Nome della fotocamera senza la marca ripetuta (es. «NIKON D5100» invece di
+  «NIKON CORPORATION NIKON D5100»).
+- Nessun messaggio d'errore chiudendo l'app con un'anteprima in corso.
+
 ## [0.9.0] - 2026-10-11
 
 Prima versione pubblicata: applicazione completa, in attesa del collaudo sui RAW reali.
@@ -51,5 +64,6 @@ Codice distribuito con licenza MIT.
 - Correzioni di memoria, concorrenza, cache e gestione degli errori; registro degli errori in
   `%LOCALAPPDATA%\Denoiser\errori.log`.
 
-[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.0...HEAD
+[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/foyer-labs/Image-Denoiser/releases/tag/v0.9.0
