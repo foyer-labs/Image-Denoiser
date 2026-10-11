@@ -1425,6 +1425,9 @@ class MainWindow(QMainWindow):
         for task in list(self._tasks):
             task.cancel()
         QThreadPool.globalInstance().waitForDone(20000)  # i lavori annullati si fermano al passo successivo
+        from ..neural.runtime import release_sessions
+
+        release_sessions()  # libera la scheda video prima di uscire
         self._save_last_settings()
         self._qs.setValue("geometria", self.saveGeometry())
         self._qs.setValue("stato_finestra", self.saveState())

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import faulthandler
 import os
 import sys
 import traceback
@@ -46,6 +47,22 @@ def _install_excepthook() -> None:
             box.exec()
 
     sys.excepthook = hook
+
+    # Crash nativi (scheda video, driver, librerie in C): l'app si chiuderebbe senza lasciare traccia.
+    # faulthandler scrive nel registro dove si trovava ogni thread in quel momento.
+    try:
+        path = log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        global _CRASH_LOG
+        _CRASH_LOG = path.open("a", encoding="utf-8")
+        _CRASH_LOG.write(f"--- avvio {datetime.now():%Y-%m-%d %H:%M:%S}\n")
+        _CRASH_LOG.flush()
+        faulthandler.enable(file=_CRASH_LOG, all_threads=True)
+    except OSError:
+        pass
+
+
+_CRASH_LOG = None  # file aperto per tutta la vita dell'app (faulthandler ne ha bisogno)
 
 
 def main(argv: list[str] | None = None) -> int:

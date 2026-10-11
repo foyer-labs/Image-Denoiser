@@ -6,6 +6,16 @@ Le versioni 0.x sono anteprime: la 1.0 arriverà dopo il collaudo sulle foto rea
 
 ## [Non rilasciato]
 
+## [0.9.2] - 2026-10-11
+
+### Corretto
+
+- L'app poteva chiudersi all'improvviso, senza messaggi, passando più volte tra DRUNet e SCUNet
+  con la scheda video (DirectML): ora sulla scheda video resta caricata una sola rete alla volta, e
+  DRUNet usa tasselli di misura fissa, così la memoria della scheda non si esaurisce.
+- Se l'app dovesse comunque chiudersi per un errore della scheda video o di una libreria, il punto
+  in cui è successo viene annotato in `%LOCALAPPDATA%\Denoiser\errori.log`.
+
 ## [0.9.1] - 2026-10-11
 
 ### Corretto
@@ -64,6 +74,7 @@ Codice distribuito con licenza MIT.
 - Correzioni di memoria, concorrenza, cache e gestione degli errori; registro degli errori in
   `%LOCALAPPDATA%\Denoiser\errori.log`.
 
-[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.1...HEAD
+[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/foyer-labs/Image-Denoiser/releases/tag/v0.9.0

@@ -140,3 +140,31 @@ def test_anteprima_di_una_zona_come_la_foto_intera(tmp_path):
     x, y, w, h = 101, 77, 150, 120
     part = render(image, analysis, s, (x, y, w, h))
     assert np.abs(part - full[y : y + h, x : x + w]).mean() < 0.004
+
+
+def test_una_sola_rete_sulla_scheda_video(monkeypatch):
+    """Passando da DRUNet a SCUNet e ritorno, sulla GPU resta caricata una sola sessione
+    (con DirectML più sessioni insieme esaurivano la memoria e l'app si chiudeva)."""
+    import threading
+
+    from denoiser.neural import runtime
+
+    class FakeSession:
+        def __init__(self, path, device):
+            self.path, self.on_gpu, self.closed = path, device != "cpu", False
+            self._run_lock = threading.Lock()
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(runtime, "InferenceSessionWrapper", FakeSession)
+    monkeypatch.setattr(runtime, "_sessions", {})
+    drunet = runtime.get_session("drunet.onnx")
+    scunet = runtime.get_session("scunet_256.onnx")
+    assert drunet.closed and not scunet.closed
+    again = runtime.get_session("drunet.onnx")
+    assert scunet.closed and again is not drunet and len(runtime._sessions) == 1
+    cpu = runtime.get_session("scunet_256.onnx", "cpu")
+    assert not again.closed and len(runtime._sessions) == 2  # le sessioni sul processore non pesano sulla GPU
+    runtime.release_sessions()
+    assert again.closed and cpu.closed and not runtime._sessions

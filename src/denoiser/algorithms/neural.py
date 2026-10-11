@@ -63,15 +63,18 @@ class NeuralDenoiser(Denoiser):
             def run(t: np.ndarray) -> np.ndarray:
                 return session(t[None])[0]
 
-        if self.spec.noise_level_input:
-            # DRUNet accetta qualsiasi misura (multipla di 8): tasselli adattati alla foto, così non si
-            # ricalcolano pixel inutili (fino a metà del lavoro con tasselli fissi).
+        if self.spec.noise_level_input and not session.on_gpu:
+            # Sul processore DRUNet accetta qualsiasi misura (multipla di 8): tasselli adattati alla foto,
+            # così non si ricalcolano pixel inutili (fino a metà del lavoro con tasselli fissi). Sulla
+            # scheda video no: con DirectML ogni misura nuova prepara nuove risorse sulla GPU, che si
+            # accumulano da un'anteprima all'altra; lì si usa sempre la stessa misura.
             m = self.spec.multiple
             shape = (adaptive_tile(chw.shape[1], tile, _OVERLAP, m), adaptive_tile(chw.shape[2], tile, _OVERLAP, m))
             out = run_tiled(run, chw, shape, _OVERLAP, progress, label=self.label)
         else:
-            # SCUNet ha finestre di attenzione fisse: tasselli quadrati della misura del modello.
-            out = run_tiled(run, chw, tile, _SCUNET_OVERLAP, progress, label=self.label)
+            # Tasselli quadrati di misura fissa (per SCUNet è obbligatorio: finestre di attenzione fisse).
+            overlap = _OVERLAP if self.spec.noise_level_input else _SCUNET_OVERLAP
+            out = run_tiled(run, chw, tile, overlap, progress, label=self.label)
         return np.ascontiguousarray(out.transpose(1, 2, 0))
 
 
