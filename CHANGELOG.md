@@ -6,6 +6,15 @@ Le versioni 0.x sono anteprime: la 1.0 arriverà dopo il collaudo sulle foto rea
 
 ## [Non rilasciato]
 
+## [0.9.3] - 2026-10-11
+
+### Aggiunto
+
+- **Schermata di avvio**: appena si avvia `Denoiser.exe` compare subito una schermata con il nome
+  dell'app, poi una barra di avanzamento con percentuale e fase in corso (calcolo numerico,
+  algoritmi, reti neurali, scheda video, interfaccia) fino all'apertura della finestra. Non resta
+  più il dubbio se il doppio clic abbia funzionato.
+
 ## [0.9.2] - 2026-10-11
 
 ### Corretto
@@ -74,7 +83,8 @@ Codice distribuito con licenza MIT.
 - Correzioni di memoria, concorrenza, cache e gestione degli errori; registro degli errori in
   `%LOCALAPPDATA%\Denoiser\errori.log`.
 
-[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.2...HEAD
+[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/foyer-labs/Image-Denoiser/releases/tag/v0.9.0

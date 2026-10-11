@@ -40,8 +40,9 @@ src/denoiser/
 └── gui/                interfaccia PySide6
     ├── main_window.py  finestra, menu, anteprima, esportazione, annulla/ripeti
     ├── split_view.py   vista prima/dopo (zoom in pixel fisici, piramide di riduzione)
+    ├── splash.py       schermata di avvio con barra di avanzamento
     ├── settings_panel.py, widgets.py, batch_dialog.py, style.py, workers.py
-packaging/              PyInstaller: denoiser.spec, icona, punti d'avvio
+packaging/              PyInstaller: denoiser.spec, icona, immagine di avvio (crea_splash.py), punti d'avvio
 tests/                  test pytest con immagini e DNG sintetici
 docs/                   documentazione e schermate
 ```

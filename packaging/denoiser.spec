@@ -70,9 +70,40 @@ def version_info(description):
 gui = analysis(os.path.join(SPECPATH, "denoiser_gui.py"))
 cli = analysis(os.path.join(SPECPATH, "denoiser_cli.py"))
 
+# Immagine di avvio nativa: compare appena si avvia l'eseguibile, prima ancora di Python, e viene
+# sostituita dalla schermata con la barra di avanzamento (denoiser.gui.splash). Richiede Tcl/Tk
+# (incluso in Python per Windows); senza, resta solo la schermata Qt.
+import subprocess  # noqa: E402
+
+try:
+    import _tkinter  # noqa: F401
+
+    HAS_TK = True
+except ImportError:
+    HAS_TK = False
+    print("Tcl/Tk non disponibile: niente immagine di avvio nativa")
+
+splash = None
+if HAS_TK:
+    SPLASH_PNG = os.path.join(workpath, "splash.png")
+    subprocess.run([sys.executable, os.path.join(SPECPATH, "crea_splash.py"), SPLASH_PNG], check=True,
+                   env={**os.environ, "PYTHONPATH": SRC + os.pathsep + os.environ.get("PYTHONPATH", "")})
+    splash = Splash(
+        SPLASH_PNG,
+        binaries=gui.binaries,
+        datas=gui.datas,
+        text_pos=(32, 247),  # come STATUS_X, STATUS_BASELINE in denoiser.gui.splash
+        text_size=10,
+        text_font="Segoe UI",
+        text_color="#c8ccd2",
+        minify_script=True,
+        always_on_top=False,
+    )
+
 gui_exe = EXE(
     PYZ(gui.pure),
     gui.scripts,
+    *([splash] if splash else []),
     [],
     exclude_binaries=True,
     name="Denoiser",
@@ -96,6 +127,7 @@ coll = COLLECT(
     gui_exe,
     gui.binaries,
     gui.datas,
+    *([splash.binaries] if splash else []),
     cli_exe,
     cli.binaries,
     cli.datas,
