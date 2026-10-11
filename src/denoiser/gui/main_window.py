@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import QSettings, QSize, Qt, QThreadPool, QTimer, QUrl
+from PySide6.QtCore import QSettings, Qt, QThreadPool, QTimer, QUrl
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -61,6 +61,7 @@ from .batch_dialog import BatchDialog
 from .settings_panel import SettingsPanel
 from .split_view import MODES, SplitView
 from .style import OK, WARN, app_icon, dark_title_bar, icon
+from .widgets import ActionButton, KeyBar
 from .workers import EtaEstimator, Task, format_duration, start
 
 #: Oltre questa area la zona visibile non viene elaborata in anteprima (si invita a ingrandire).
@@ -159,6 +160,7 @@ class MainWindow(QMainWindow):
         self._push_history(force=True)
         self._update_output_example()
         self._update_enabled()
+        self.keybar.setVisible(self.act_keybar.isChecked())
         geometry = self._qs.value("geometria")
         if geometry:
             self.restoreGeometry(geometry)
@@ -201,8 +203,24 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.welcome = self._build_welcome()
         self.view = SplitView()
+        view_page = QWidget()
+        pv = QVBoxLayout(view_page)
+        pv.setContentsMargins(0, 0, 0, 0)
+        pv.setSpacing(0)
+        pv.addWidget(self.view, 1)
+        self.keybar = KeyBar([
+            ("Rotellina", "zoom"),
+            ("Trascina", "sposta la foto"),
+            ("Doppio clic", "100% su quel punto"),
+            ("Spazio", "tieni premuto per l'originale"),
+            ("\\", "cambia confronto"),
+            ("Ctrl+E", "esporta"),
+            ("F1", "tutte le scorciatoie"),
+        ])
+        pv.addWidget(self.keybar)
+        self._view_page = view_page
         self.stack.addWidget(self.welcome)
-        self.stack.addWidget(self.view)
+        self.stack.addWidget(view_page)
         v.addWidget(self.stack, 1)
         self.setCentralWidget(central)
 
@@ -226,7 +244,7 @@ class MainWindow(QMainWindow):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.drop_text = QLabel("Trascina qui una foto, oppure")
         self.drop_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        open_button = QPushButton(icon("open"), "  Apri una foto…")
+        open_button = QPushButton(icon("open"), "  Apri una foto…   (Ctrl+O)")
         open_button.setObjectName("primary")
         open_button.setMinimumHeight(36)
         open_button.clicked.connect(self._open_dialog)
@@ -237,6 +255,12 @@ class MainWindow(QMainWindow):
         steps.setAlignment(Qt.AlignmentFlag.AlignCenter)
         for w in (logo, title, self.drop_text, open_button, formats, steps):
             v.addWidget(w)
+        keys = KeyBar([("Ctrl+O", "apri"), ("Ctrl+B", "più file"), ("F1", "guida e scorciatoie")])
+        keys.setStyleSheet("QFrame#keybar{background:transparent;border:none;}")
+        keys.layout().insertStretch(0, 1)
+        keys_row = QHBoxLayout()
+        keys_row.addWidget(keys)
+        v.addLayout(keys_row)
         self.recent_box = QVBoxLayout()
         self.recent_title = QLabel("<b>Aperti di recente</b>")
         v.addSpacing(8)
@@ -327,7 +351,7 @@ class MainWindow(QMainWindow):
                                 "Apre in Esplora risorse la cartella dove vengono salvate le foto")
         self.act_quit = a("Esci", self.close, "Ctrl+Q")
         self.act_undo = a("Annulla", self._undo, QKeySequence.StandardKey.Undo, "Annulla l'ultima regolazione", "undo")
-        self.act_redo = a("Ripeti", self._redo, QKeySequence.StandardKey.Redo, "Ripeti la regolazione annullata")
+        self.act_redo = a("Ripeti", self._redo, QKeySequence.StandardKey.Redo, "Ripeti la regolazione annullata", "redo")
         self.act_reset = a("Valori consigliati", self._reset_settings, None,
                            "Riporta riduzione del rumore e sviluppo ai valori consigliati", "reset")
         self.act_fit = a("Adatta alla finestra", lambda: self.view.fit(), "Ctrl+0", "Mostra tutta la foto", "fit")
@@ -346,7 +370,7 @@ class MainWindow(QMainWindow):
             self.mode_group.addAction(act)
             self.mode_actions[key] = act
         self.mode_actions["split"].setChecked(True)
-        self.act_help = a("Guida rapida", self._help, "F1", "Come si usa e scorciatoie da tastiera", "help")
+        self.act_help = a("Guida e scorciatoie", self._help, "F1", "Come si usa e tutte le scorciatoie da tastiera", "help")
         self.act_about = a("Informazioni su Denoiser", self._about)
         self.act_cancel = a("Interrompi", self._cancel_job, "Esc")
         self.addAction(self.act_cancel)
@@ -378,6 +402,11 @@ class MainWindow(QMainWindow):
         peek = QAction("Tieni premuto Spazio per vedere l'originale", self)
         peek.setEnabled(False)
         m.addAction(peek)
+        m.addSeparator()
+        self.act_keybar = QAction("Mostra i tasti sotto la foto", self, checkable=True)
+        self.act_keybar.setChecked(self._qs.value("barra_tasti", True, type=bool))
+        self.act_keybar.toggled.connect(self._toggle_keybar)
+        m.addAction(self.act_keybar)
         self.preset_menu = mb.addMenu("&Preset")
         m = mb.addMenu("&Aiuto")
         m.addAction(self.act_help)
@@ -394,36 +423,37 @@ class MainWindow(QMainWindow):
         bar = QToolBar("Principale")
         bar.setObjectName("principale")
         bar.setMovable(False)
-        bar.setIconSize(QSize(18, 18))
-        bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.addToolBar(bar)
-        bar.addAction(self.act_open)
-        bar.addAction(self.act_batch)
+        # Ogni pulsante mostra la propria scorciatoia: si imparano usando l'app.
+        open_button = ActionButton(self.act_open, "Apri file…")
+        open_button.setObjectName("primary")
+        self._open_button = open_button
+        bar.addWidget(open_button)
+        bar.addWidget(ActionButton(self.act_batch))
         bar.addSeparator()
-        bar.addAction(self.act_undo)
+        bar.addWidget(ActionButton(self.act_undo))
+        bar.addWidget(ActionButton(self.act_redo))
         bar.addSeparator()
-        bar.addAction(self.act_fit)
-        bar.addAction(self.act_100)
-        compare = QToolButton()
-        compare.setDefaultAction(self.act_cycle)
-        compare.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        compare.setText("Confronto")
-        mode_menu = QMenu(compare)
+        bar.addWidget(ActionButton(self.act_fit, "Adatta"))
+        bar.addWidget(ActionButton(self.act_100, "100%"))
+        bar.addWidget(ActionButton(self.act_cycle, "Confronto"))
+        modes = QToolButton()
+        modes.setText("▾")
+        modes.setToolTip("Scegli il tipo di confronto")
+        modes.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        modes.setStyleSheet("QToolButton::menu-indicator { image: none; }")
+        mode_menu = QMenu(modes)
         for act in self.mode_actions.values():
             mode_menu.addAction(act)
-        compare.setMenu(mode_menu)
-        compare.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-        bar.addWidget(compare)
+        modes.setMenu(mode_menu)
+        bar.addWidget(modes)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         bar.addWidget(spacer)
-        help_button = QToolButton()
-        help_button.setDefaultAction(self.act_help)
-        help_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        bar.addWidget(help_button)
-        bar.addAction(self.act_export)
-        export_button = bar.widgetForAction(self.act_export)
+        bar.addWidget(ActionButton(self.act_help, "Guida e scorciatoie"))
+        export_button = ActionButton(self.act_export, "Esporta")
         export_button.setObjectName("primary")
+        bar.addWidget(export_button)
 
     def _connect(self) -> None:
         self._preview_timer = QTimer(self, singleShot=True, interval=250)
@@ -535,7 +565,7 @@ class MainWindow(QMainWindow):
         self._add_recent(path)
         self._update_info()
         self._update_output_example()
-        self.stack.setCurrentWidget(self.view)
+        self.stack.setCurrentWidget(self._view_page)
         self.view.set_overlay("")
         self._refresh_base(reset_view=reset_view)
         self._update_enabled()
@@ -722,6 +752,10 @@ class MainWindow(QMainWindow):
             self._download_model(algorithm.key)
         else:
             self._zoom(1.0)
+
+    def _toggle_keybar(self, on: bool) -> None:
+        self.keybar.setVisible(on)
+        self._qs.setValue("barra_tasti", on)
 
     def _zoom(self, value: float) -> None:
         if self.view.has_image():

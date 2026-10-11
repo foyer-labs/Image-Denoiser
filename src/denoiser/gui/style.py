@@ -71,6 +71,18 @@ QDockWidget {{ titlebar-close-icon: none; }}
 QProgressBar {{ background: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 3px; text-align: center; height: 12px; }}
 QProgressBar::chunk {{ background: {ACCENT}; border-radius: 2px; }}
 QListWidget {{ background: #1e1e1e; border: 1px solid #3a3a3a; }}
+QLabel#kbd {{
+    color: #c8c8c8; background: #2e2e2e; border: 1px solid #4a4a4a; border-bottom: 2px solid #4a4a4a;
+    border-radius: 3px; padding: 0px 5px; font-size: 8pt; font-family: "Segoe UI", sans-serif;
+}}
+QToolButton#primary QLabel {{ color: white; background: transparent; }}
+QToolButton#primary QLabel#kbd {{ color: white; background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.45); }}
+QLabel[off="true"] {{ color: #6a6a6a; }}
+QLabel#kbd[off="true"] {{ color: #6a6a6a; border-color: #3a3a3a; }}
+QToolButton#primary QLabel[off="true"] {{ color: #8a8a8a; }}
+QToolButton#primary QLabel#kbd[off="true"] {{ color: #8a8a8a; background: transparent; border-color: #4a4a4a; }}
+QFrame#keybar {{ background: #1b1b1b; border-top: 1px solid #111; }}
+QFrame#keybar QLabel#keytext {{ color: #9a9a9a; font-size: 8pt; }}
 """
 
 
@@ -183,6 +195,10 @@ def icon(name: str, color: str | None = None) -> QIcon:
         path.moveTo(9, 6); path.lineTo(4, 11); path.lineTo(9, 16)
         p.drawPath(path)
         p.drawArc(QRectF(4, 6, 16, 14), 90 * 16, -180 * 16)
+    elif name == "redo":
+        path.moveTo(15, 6); path.lineTo(20, 11); path.lineTo(15, 16)
+        p.drawPath(path)
+        p.drawArc(QRectF(4, 6, 16, 14), 90 * 16, 180 * 16)
     elif name == "reset":
         p.drawArc(QRectF(4, 4, 16, 16), 60 * 16, 300 * 16)
         p.drawPolyline([QPointF(15, 2), QPointF(18, 5.5), QPointF(14, 7)])

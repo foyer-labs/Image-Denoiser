@@ -4,16 +4,19 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from PySide6.QtCore import QEvent, QObject, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal
+from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QSlider,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -306,3 +309,86 @@ class ParamForm(QWidget):
     def install_filter(self, filt: QObject) -> None:
         for w in self.findChildren(QWidget):
             w.installEventFilter(filt)
+
+
+def shortcut_text(action: QAction) -> str:
+    return action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+
+
+def kbd(text: str) -> QLabel:
+    """Etichetta a forma di tasto: rende visibili le scorciatoie."""
+    label = QLabel(text)
+    label.setObjectName("kbd")
+    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    return label
+
+
+class ActionButton(QToolButton):
+    """Pulsante della barra con icona, testo e scorciatoia sempre visibile (es. «Apri file…  [Ctrl+O]»)."""
+
+    def __init__(self, action: QAction, text: str | None = None, show_text: bool = True):
+        super().__init__()
+        self._action = action
+        self.setToolTip(action.toolTip())
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(8, 3, 8, 3)
+        row.setSpacing(6)
+        self._icon = QLabel()
+        if not action.icon().isNull():
+            row.addWidget(self._icon)
+        self._text = QLabel(text or action.text())
+        self._text.setVisible(show_text)
+        row.addWidget(self._text)
+        key = shortcut_text(action)
+        if key:
+            row.addWidget(kbd(key))
+        for w in self.findChildren(QLabel):
+            w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.clicked.connect(action.trigger)
+        action.changed.connect(self._sync)
+        self._sync()
+
+    def _sync(self) -> None:
+        enabled = self._action.isEnabled()
+        self.setEnabled(enabled)
+        self.setToolTip(self._action.toolTip())
+        if not self._action.icon().isNull():
+            mode = QIcon.Mode.Normal if enabled else QIcon.Mode.Disabled
+            self._icon.setPixmap(self._action.icon().pixmap(QSize(18, 18), mode))
+        # Il colore delle etichette dipende dallo stato del pulsante: va ricalcolato a ogni cambio.
+        for w in [self, *self.findChildren(QLabel)]:
+            if w is not self:
+                w.setProperty("off", not enabled)
+            w.style().unpolish(w)
+            w.style().polish(w)
+
+    def setObjectName(self, name: str) -> None:  # noqa: N802 (API Qt)
+        super().setObjectName(name)
+        self._sync()
+
+    def sizeHint(self) -> QSize:  # noqa: N802 (API Qt)
+        hint = self.layout().sizeHint()
+        return QSize(hint.width(), max(hint.height(), 30))
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        return self.sizeHint()
+
+
+class KeyBar(QFrame):
+    """Striscia con i comandi principali della vista e i loro tasti."""
+
+    def __init__(self, items: list[tuple[str, str]]):
+        super().__init__()
+        self.setObjectName("keybar")
+        row = QHBoxLayout(self)
+        row.setContentsMargins(10, 4, 10, 4)
+        row.setSpacing(5)
+        for i, (key, text) in enumerate(items):
+            if i:
+                row.addSpacing(12)
+            row.addWidget(kbd(key))
+            label = QLabel(text)
+            label.setObjectName("keytext")
+            row.addWidget(label)
+        row.addStretch(1)

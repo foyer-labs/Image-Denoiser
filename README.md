@@ -76,6 +76,10 @@ un'impronta SHA-256 e convertito in ONNX sul tuo computer; da quel momento tutto
 
 Tema scuro, tutto in italiano. Flusso in tre passi: **apri → guarda al 100% → esporta**.
 
+Le scorciatoie sono sempre in vista: ogni pulsante della barra in alto mostra il proprio tasto
+(es. *Apri file…* `Ctrl+O`), una striscia sotto la foto ricorda i comandi della vista
+(disattivabile da *Visualizza → Mostra i tasti sotto la foto*) e **F1** apre la guida con l'elenco completo.
+
 - **Apri** (Ctrl+O), trascina una foto nella finestra o scegli tra i **file recenti** nella
   pagina iniziale. Trascinando più foto o una cartella si apre *Elabora più file*.
 - La foto si apre **al 100% al centro**: il rumore si giudica a pixel reali. La **linea** separa
