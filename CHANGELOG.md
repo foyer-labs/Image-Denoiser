@@ -5,6 +5,20 @@ Tutte le modifiche rilevanti, dalla più recente. Formato ispirato a
 
 ## [Non rilasciato]
 
+## [0.10.0] - 2026-10-11
+
+### Aggiunto
+
+- **Risultato a qualsiasi ingrandimento**: con la foto rimpicciolita (*Adatta*, 50%, 25%…) l'app
+  elabora la foto intera in background, con percentuale e tempo rimanente. Si vede così l'effetto
+  sull'immagine nel suo insieme e non solo su un dettaglio, cosa utile soprattutto con i sensori da
+  molti megapixel. Una volta pronto, il risultato vale per ogni ingrandimento e spostamento senza
+  altri calcoli. Da vicino resta il calcolo rapido della sola zona visibile.
+
+### Migliorato
+
+- Anteprima più leggera in memoria: resa tonale a strisce e immagini della vista a 8 bit.
+
 ## [0.9.3] - 2026-10-11
 
 ### Aggiunto
@@ -82,7 +96,8 @@ Codice distribuito con licenza MIT.
 - Correzioni di memoria, concorrenza, cache e gestione degli errori; registro degli errori in
   `%LOCALAPPDATA%\Denoiser\errori.log`.
 
-[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.3...HEAD
+[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.3...v0.10.0
 [0.9.3]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.0...v0.9.1

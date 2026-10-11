@@ -30,7 +30,7 @@ Nessun abbonamento, nessun caricamento nel cloud: la foto non lascia mai il PC.
 - **Cinque metodi**, tre classici e due reti neurali (DRUNet e SCUNet) che girano in locale, sulla scheda
   video se disponibile.
 - **Anteprima immediata al 100%** con tendina prima/dopo e vista del «rumore tolto» per controllare
-  di non perdere dettaglio.
+  di non perdere dettaglio; con la foto rimpicciolita, risultato calcolato sulla **foto intera**.
 - **Salva in TIFF, PNG, JPEG o DNG**, conservando metadati (EXIF, GPS, parole chiave…) e profilo colore.
   Il DNG ripulito si apre in Lightroom, darktable e simili come un RAW.
 - **Elabora intere cartelle** con le stesse impostazioni o con un preset.

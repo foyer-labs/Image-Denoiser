@@ -168,3 +168,33 @@ def test_una_sola_rete_sulla_scheda_video(monkeypatch):
     assert not again.closed and len(runtime._sessions) == 2  # le sessioni sul processore non pesano sulla GPU
     runtime.release_sessions()
     assert again.closed and cpu.closed and not runtime._sessions
+
+
+def test_anteprima_della_foto_intera_come_l_esportazione(tmp_path):
+    """Con la foto rimpicciolita l'anteprima elabora l'immagine intera (a strisce e in 8 bit):
+    deve coincidere con il file esportato e con la zona vista da vicino."""
+    import pytest
+
+    pytest.importorskip("PySide6")
+    from denoiser.gui.main_window import contains, finish_preview, preview_job
+    from denoiser.gui.split_view import to_uint8
+
+    image = load_image(write_bayer_dng(tmp_path / "intera", clean_linear(size=384), a=2e-3, b=2e-5, seed=3))
+    analysis = analyze(image)
+    s = Settings()
+    s.denoise.raw_stage = "rgb"
+    before = to_uint8(render(image, analysis, s, None, False))
+    whole = (0, 0, image.width, image.height)
+    result = preview_job(image, analysis, s, whole, before)
+    exported = to_uint8(render(image, analysis, s))
+    assert result["rgb"].dtype == np.uint8 and result["rgb"].shape == exported.shape
+    assert np.abs(result["rgb"].astype(int) - exported).max() <= 1
+    # rumore tolto ×4 attorno al grigio medio
+    expected = np.clip((exported.astype(int) - before) * 4 + 128, 0, 255)
+    assert np.abs(result["diff"].astype(int) - expected).max() <= 6
+    assert result["stats"].startswith("rumore stimato")
+    # Una zona (vista da vicino) ritagliata da «before» non contiguo dà lo stesso risultato.
+    x, y, w, h = 64, 100, 150, 120
+    part = finish_preview(image, analysis, s, result["linear"][y : y + h, x : x + w], before[y : y + h, x : x + w])
+    assert np.array_equal(part["rgb"], result["rgb"][y : y + h, x : x + w])
+    assert contains(whole, (x, y, w, h)) and not contains((x, y, w, h), whole)

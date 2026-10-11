@@ -8,6 +8,7 @@ import sys
 import time
 from pathlib import Path
 
+import cv2
 import numpy as np
 from PySide6.QtCore import QEvent, QSettings, Qt, QThreadPool, QTimer, QUrl
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QFontMetrics, QKeySequence
@@ -44,7 +45,7 @@ from ..io.dng_converter import find_converter
 from ..algorithms import get_algorithm
 from ..io.formats import OUTPUT_EXTENSIONS, file_dialog_filter, is_supported, kind_of
 from ..io.naming import output_path, unique_path
-from ..noise import estimate_sigma
+from ..noise import estimate_sigma, sample_tiles
 from ..pipeline import Analysis, analyze, denoise_region, noise_judgement, render, uses_sensor_stage
 from ..presets import (
     BUILTIN_PRESETS,
@@ -60,18 +61,28 @@ from ..presets import (
 from ..settings import Settings
 from .batch_dialog import BatchDialog
 from .settings_panel import SettingsPanel
-from .split_view import MODES, SplitView, build_pyramid
+from .split_view import MODES, SplitView, build_pyramid, to_uint8
 from .style import OK, WARN, app_icon, dark_title_bar, icon
 from .widgets import ActionButton, KeyBar
 from .workers import EtaEstimator, Task, format_duration, start
 
-#: Oltre questa area la zona visibile non viene elaborata in anteprima (si invita a ingrandire).
+#: Oltre questa area visibile non si elabora la sola zona ma la foto intera (in background): il
+#: risultato vale poi per qualsiasi ingrandimento e spostamento, senza ricalcoli.
 PREVIEW_MAX_PIXELS = 3_000_000
+#: Righe elaborate alla volta nella resa tonale dell'anteprima (limita la memoria sulle foto grandi).
+_TONE_ROWS = 512
 _MAX_RECENT = 10
 
 
 def _luma(rgb: np.ndarray) -> np.ndarray:
     return (rgb @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)).astype(np.float32)
+
+
+def contains(outer, inner) -> bool:
+    """True se il rettangolo (x, y, w, h) ``outer`` contiene ``inner``."""
+    ox, oy, ow, oh = outer
+    ix, iy, iw, ih = inner
+    return ox <= ix and oy <= iy and ix + iw <= ox + ow and iy + ih <= oy + oh
 
 
 def base_job(image: ImageData, analysis: Analysis, settings: Settings):
@@ -86,14 +97,29 @@ def preview_job(image: ImageData, analysis: Analysis, settings: Settings, rect, 
 
 
 def finish_preview(image: ImageData, analysis: Analysis, settings: Settings, linear: np.ndarray, before: np.ndarray):
+    """Resa tonale del risultato, vista del rumore tolto e statistiche.
+
+    ``before``: la stessa zona dell'immagine «prima» in uint8. Si lavora a strisce e in uint8, così
+    anche il risultato sulla foto intera (decine di megapixel) non moltiplica la memoria occupata.
+    """
     from ..pipeline import _tone
 
-    rgb = _tone(linear, image.domain, analysis, settings)
-    diff = np.clip((rgb - before) * 4.0 + 0.5, 0.0, 1.0)
+    h, w = linear.shape[:2]
+    rgb = np.empty((h, w, 3), np.uint8)
+    diff = np.empty((h, w, 3), np.uint8)
+    for y0 in range(0, h, _TONE_ROWS):
+        y1 = min(h, y0 + _TONE_ROWS)
+        rgb[y0:y1] = to_uint8(_tone(linear[y0:y1], image.domain, analysis, settings))
+        # (dopo − prima) × 4 attorno al grigio medio
+        diff[y0:y1] = cv2.addWeighted(rgb[y0:y1], 4.0, before[y0:y1], -4.0, 127.5)
     stats = ""
     try:
-        s_before = estimate_sigma(_luma(before), 1_000_000)
-        s_after = estimate_sigma(_luma(rgb), 1_000_000)
+        # Stessi tasselli prima e dopo; il «dopo» in virgola mobile (l'arrotondamento a 8 bit
+        # aggiungerebbe un rumore paragonabile a quello rimasto).
+        after_tiles = [_luma(_tone(t, image.domain, analysis, settings)) for t in sample_tiles(linear, 1_000_000)]
+        before_tiles = [_luma(t.astype(np.float32) / 255.0) for t in sample_tiles(before, 1_000_000)]
+        s_before = estimate_sigma(before_tiles)
+        s_after = estimate_sigma(after_tiles)
         if s_before > 1e-4:
             reduction = min(max(0.0, 1 - s_after / s_before) * 100, 99.0)
             stats = f"rumore stimato −{reduction:.0f}%"
@@ -139,6 +165,9 @@ class MainWindow(QMainWindow):
         self._preview_task: Task | None = None
         self._preview_pending = False
         self._preview_cache: tuple[str, tuple, np.ndarray] | None = None
+        self._preview_running: tuple[str, tuple] | None = None  # (chiave, zona) dell'anteprima in corso
+        self._preview_fraction = 0.0
+        self._hint_action: str | None = None
         self._preview_started = 0.0
         self._job: Task | None = None
         self._job_kind = ""
@@ -682,16 +711,16 @@ class MainWindow(QMainWindow):
     def _retone_cached_preview(self) -> bool:
         """Dopo un cambio di luminosità riusa il denoise già calcolato: si rifà solo la resa tonale."""
         cache = self._preview_cache
-        rect = self.view.visible_image_rect()
+        visible = self.view.visible_image_rect()
         settings = self.panel.settings()
-        if cache is None or self._base_rgb is None or rect is None:
+        if cache is None or self._base_rgb is None or visible is None:
             return False
-        key, cached_rect, linear = cache
-        if key != self._preview_key(settings) or tuple(cached_rect) != tuple(rect):
+        key, rect, linear = cache
+        if key != self._preview_key(settings) or not contains(rect, visible):
             return False
         x, y, w, h = rect
-        before = self._base_rgb[y : y + h, x : x + w].astype(np.float32) / 255.0
-        task = Task(finish_preview, self._image, self._analysis, settings, linear, before)
+        task = Task(finish_preview, self._image, self._analysis, settings, linear,
+                    self._base_rgb[y : y + h, x : x + w])
         self._retone_request += 1
         request, generation = self._retone_request, self._generation
         task.signals.finished.connect(
@@ -700,56 +729,93 @@ class MainWindow(QMainWindow):
         self._run(task)
         return True
 
+    def _preview_target(self, visible) -> tuple[tuple[int, int, int, int], bool]:
+        """Zona da elaborare per la vista attuale e True se è la foto intera.
+
+        Da vicino basta la zona visibile (pochi istanti); con la foto rimpicciolita si elabora tutta,
+        e il risultato serve poi a qualsiasi ingrandimento senza ricalcoli.
+        """
+        if visible[2] * visible[3] <= PREVIEW_MAX_PIXELS:
+            return visible, False
+        return (0, 0, self._image.width, self._image.height), True
+
     def _start_preview(self) -> None:
         if self._image is None or self._analysis is None or not self.view.has_image() or self._base_rgb is None:
             return
+        visible = self.view.visible_image_rect()
+        if visible is None:
+            return
+        settings = self.panel.settings()
+        key = self._preview_key(settings)
         if self._preview_task is not None:
+            running_key, running_rect = self._preview_running
+            _target, whole = self._preview_target(visible)
+            # Il calcolo in corso copre già la zona visibile: lo si lascia finire. Se però era la foto
+            # intera ed era appena partito e ora si guarda da vicino, conviene la sola zona (pochi istanti).
+            if running_key == key and contains(running_rect, visible) and (whole or self._preview_fraction >= 0.5):
+                return
             # Un'anteprima vecchia è ancora in corso: la si interrompe e si riparte appena finisce.
             self._preview_pending = True
             self._preview_task.cancel()
             return
-        rect = self.view.visible_image_rect()
-        if rect is None:
-            return
-        settings = self.panel.settings()
         algorithm = self.panel.current_algorithm()
         if not algorithm.is_available():
             self.view.clear_patch()
             spec = algorithm.spec
             if spec.key in self._downloading:
-                self.view.set_hint(f"Download di {spec.label} in corso…")
+                self._set_hint(f"Download di {spec.label} in corso…")
             else:
-                self.view.set_hint(f"{spec.label} non è ancora sul computer. Fai clic qui per scaricarlo "
-                                   f"({spec.size_mb} MB, poi funziona offline).")
+                self._set_hint(f"{spec.label} non è ancora sul computer. Fai clic qui per scaricarlo "
+                               f"({spec.size_mb} MB, poi funziona offline).", "download")
             return
-        if rect[2] * rect[3] > PREVIEW_MAX_PIXELS:
-            self.view.clear_patch()
-            self.view.set_hint("Il risultato si vede ingrandendo: fai doppio clic sul punto da controllare "
-                               "(oppure fai clic qui per il 100%).")
-            return
-        self.view.set_hint("")
-        key = self._preview_key(settings)
-        if self._preview_cache is not None and self._preview_cache[0] == key and tuple(self._preview_cache[1]) == tuple(rect):
-            return  # niente di nuovo da calcolare
+        self._set_hint("")
+        if self._preview_cache is not None and self._preview_cache[0] == key and contains(self._preview_cache[1], visible):
+            self.view.mark_fresh()
+            return  # niente di nuovo da calcolare: il risultato mostrato copre già la zona visibile
+        rect, whole = self._preview_target(visible)
         x, y, w, h = rect
-        before = self._base_rgb[y : y + h, x : x + w].astype(np.float32) / 255.0
+        before = self._base_rgb[y : y + h, x : x + w]
         generation = self._generation
         task = Task(preview_job, self._image, self._analysis, settings, rect, before, with_progress=True)
-        task.signals.progress.connect(lambda f, _m: self.view.set_busy(f if f > 0 else -1))
+        eta = EtaEstimator()
+        task.signals.progress.connect(lambda f, _m: self._on_preview_progress(task, f, whole, eta))
         task.signals.finished.connect(lambda res: self._on_preview(task, generation, res, rect, key))
         task.signals.failed.connect(lambda msg, detail: self._on_preview_failed(task, msg))
         task.signals.cancelled.connect(lambda: self._on_preview_cancelled(task))
         self._preview_task = task
+        self._preview_running = (key, rect)
+        self._preview_fraction = 0.0
         self._preview_started = time.perf_counter()
         self.view.mark_stale()
         self.view.set_busy(-1)
+        if whole:
+            self._set_hint("Calcolo del risultato sulla foto intera…", "progress")
         self._run(task)
+
+    def _on_preview_progress(self, task: Task, fraction: float, whole: bool, eta: EtaEstimator) -> None:
+        if task is not self._preview_task:
+            return
+        self._preview_fraction = fraction
+        self.view.set_busy(fraction if fraction > 0 else -1)
+        if whole:
+            text = "Calcolo del risultato sulla foto intera…"
+            if fraction >= 0.995:
+                text = "Risultato sulla foto intera quasi pronto…"
+            elif fraction > 0:
+                text += f" {fraction * 100:.0f}%"
+                remaining = eta.text(fraction)
+                if remaining:
+                    text += f" · {remaining}"
+            self._set_hint(text, "progress")
 
     def _preview_done(self, task: Task) -> bool:
         """Chiude il ciclo di un'anteprima; True se va ripartita subito."""
         if self._preview_task is task:
             self._preview_task = None
+            self._preview_running = None
         self.view.set_busy(None)
+        if self._hint_action == "progress":
+            self._set_hint("")
         if self._preview_pending:
             self._preview_pending = False
             self._start_preview()
@@ -767,23 +833,28 @@ class MainWindow(QMainWindow):
         self.view.set_patch(result["rgb"], rect, result["diff"])
         self.view.set_stats(result["stats"])
         if elapsed > 0:
-            self.preview_time.setText(f"Anteprima: {elapsed:.1f} s".replace(".", ","))
+            self.preview_time.setText(f"Anteprima: {format_duration(elapsed) if elapsed >= 60 else f'{elapsed:.1f} s'}"
+                                      .replace(".", ","))
 
     def _on_preview_failed(self, task: Task, message: str) -> None:
         if self._preview_done(task):
             return
         _title, text = humanize_error(message)
-        self.view.set_hint(f"Anteprima non riuscita: {text}")
+        self._set_hint(f"Anteprima non riuscita: {text}")
 
     def _on_preview_cancelled(self, task: Task) -> None:
         self._preview_done(task)
 
+    def _set_hint(self, text: str, action: str | None = None) -> None:
+        """Messaggio al centro della vista. ``action``: "download" (un clic scarica il modello),
+        "progress" (avanzamento della foto intera, tolto alla fine del calcolo) o None."""
+        self._hint_action = action if text else None
+        self.view.set_hint(text, clickable=action == "download")
+
     def _on_hint_clicked(self) -> None:
         algorithm = self.panel.current_algorithm()
-        if not algorithm.is_available():
+        if self._hint_action == "download" and not algorithm.is_available():
             self._download_model(algorithm.key)
-        else:
-            self._zoom(1.0)
 
     def _toggle_keybar(self, on: bool) -> None:
         self.keybar.setVisible(on)
@@ -1356,7 +1427,8 @@ class MainWindow(QMainWindow):
             "<h3>Come si usa</h3>"
             "<ol><li><b>Apri</b> una foto (o trascinala nella finestra).</li>"
             "<li>La foto si apre al <b>100%</b>: a sinistra della linea l'originale, a destra il risultato. "
-            "Trascina la linea, sposta la foto, scegli il punto con il doppio clic.</li>"
+            "Trascina la linea, sposta la foto, scegli il punto con il doppio clic. Rimpicciolendo la foto "
+            "(Ctrl+0) il risultato viene calcolato sulla foto intera.</li>"
             "<li>Regola <b>Grana</b> e <b>Macchie di colore</b> (1 = rumore misurato). Tutto il resto ha già "
             "valori consigliati; la spiegazione di ogni controllo compare in basso nel pannello.</li>"
             "<li><b>Esporta</b> (Ctrl+E). Per più foto: <b>Elabora più file</b> (Ctrl+B).</li></ol>"

@@ -94,6 +94,7 @@ class SplitView(QWidget):
         self._offset_start = QPointF()
         self._hover_handle = False
         self._hint = ""
+        self._hint_clickable = False
         self._hint_rect = QRectF()
         self._stats = ""
         self._overlay = ""  # messaggio centrale (es. apertura in corso)
@@ -144,6 +145,12 @@ class SplitView(QWidget):
         self._stats = ""
         self.update()
 
+    def mark_fresh(self) -> None:
+        """Il risultato mostrato corrisponde di nuovo alle impostazioni (es. dopo un annulla)."""
+        if self._stale:
+            self._stale = False
+            self.update()
+
     def mark_stale(self) -> None:
         """Il risultato mostrato non corrisponde più alle impostazioni: viene attenuato."""
         if self._patch is not None:
@@ -158,8 +165,10 @@ class SplitView(QWidget):
             self._busy_timer.start()
         self.update()
 
-    def set_hint(self, text: str) -> None:
+    def set_hint(self, text: str, clickable: bool = False) -> None:
+        """Messaggio al centro del lato «dopo»; ``clickable``: un clic emette :attr:`hintClicked`."""
         self._hint = text
+        self._hint_clickable = clickable and bool(text)
         self.update()
 
     def set_stats(self, text: str) -> None:
@@ -437,9 +446,10 @@ class SplitView(QWidget):
     def _draw_hint(self, p: QPainter, area: QRectF) -> None:
         anchor = QPointF(area.center().x(), self.height() / 2)
         self._hint_rect = self._pill(p, self._hint, anchor, size=10, center=True)
-        p.setPen(QPen(QColor(ACCENT), 1.5))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(self._hint_rect, 8, 8)
+        if self._hint_clickable:  # bordo colorato solo se il messaggio si può cliccare
+            p.setPen(QPen(QColor(ACCENT), 1.5))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(self._hint_rect, 8, 8)
 
     # ------------------------------------------------------------------ interazione
 
@@ -450,7 +460,7 @@ class SplitView(QWidget):
         if event.button() != Qt.MouseButton.LeftButton or self._base is None:
             return
         pos = event.position()
-        if self._hint and self._hint_rect.contains(pos):
+        if self._hint_clickable and self._hint_rect.contains(pos):
             self.hintClicked.emit()
             return
         self._drag_mode = "split" if self._near_handle(pos.x()) else "pan"
@@ -473,7 +483,7 @@ class SplitView(QWidget):
             if near != self._hover_handle:
                 self._hover_handle = near
                 self.update()
-            if self._hint and self._hint_rect.contains(pos):
+            if self._hint_clickable and self._hint_rect.contains(pos):
                 self.setCursor(Qt.CursorShape.PointingHandCursor)
             else:
                 self.setCursor(Qt.CursorShape.SplitHCursor if near else Qt.CursorShape.OpenHandCursor)

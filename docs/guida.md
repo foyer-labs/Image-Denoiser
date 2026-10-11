@@ -68,10 +68,16 @@ La vista **rumore tolto** mostra, amplificata quattro volte, la differenza tra o
 Se vedi solo una grana uniforme il dettaglio è salvo; se compaiono i contorni degli oggetti la
 riduzione è troppo forte: abbassa «Grana» o alza «Recupero dettaglio».
 
-L'anteprima viene calcolata sulla zona visibile. Mentre si aggiorna compare una sottile barra blu in
-alto. Se hai cambiato un'impostazione e il calcolo non è ancora finito, il lato «dopo» è velato con
-l'etichetta *DA AGGIORNARE*. Con la foto molto rimpicciolita l'anteprima non viene calcolata: un
-avviso invita a ingrandire (un clic sull'avviso porta al 100%).
+Il risultato si vede a **qualsiasi ingrandimento**. Da vicino (100%, 200%) viene calcolata solo la zona
+visibile, in pochi istanti. Con la foto rimpicciolita (*Adatta*, 50%, 25%…) viene elaborata **la foto
+intera**, come nel file esportato: un avviso al centro mostra percentuale e tempo rimanente. Così puoi
+giudicare l'effetto sull'immagine nel suo insieme, utile soprattutto con i sensori da molti megapixel.
+Finito il calcolo, ingrandimenti e spostamenti non richiedono altre attese finché non cambi
+un'impostazione. Se durante il calcolo della foto intera ingrandisci un dettaglio, l'app passa alla
+sola zona visibile, salvo che il calcolo sia già oltre la metà.
+
+Mentre l'anteprima si aggiorna compare una sottile barra blu in alto. Se hai cambiato un'impostazione
+e il calcolo non è ancora finito, il lato «dopo» è velato con l'etichetta *DA AGGIORNARE*.
 
 ![Tutta la foto in vista](screenshots/04-adatta.jpg)
 
