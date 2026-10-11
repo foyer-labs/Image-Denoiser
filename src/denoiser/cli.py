@@ -13,7 +13,7 @@ from .batch import collect_inputs, process_file
 from .io import UnsupportedImageError, load_image
 from .io.naming import PLACEHOLDERS
 from .pipeline import analyze, uses_sensor_stage
-from .presets import list_presets, resolve_preset, save_preset, user_presets_dir
+from .presets import list_presets, preset_path, resolve_preset, save_preset
 from .settings import DEMOSAIC_ALGORITHMS, OUTPUT_FORMATS, WB_MODES, Settings
 
 
@@ -180,12 +180,12 @@ def _cmd_algoritmi(_: argparse.Namespace) -> int:
 
 def _cmd_preset(args: argparse.Namespace) -> int:
     if args.azione == "elenca":
-        for name, value in list_presets().items():
+        for name, (description, value) in list_presets().items():
             origin = "predefinito" if not isinstance(value, Path) else str(value)
-            print(f"{name}  ({origin})")
+            print(f"{name}  ({origin})\n    {description}")
         return 0
     settings = _settings_from_args(args)
-    path = save_preset(settings, user_presets_dir() / args.nome_preset)
+    path = save_preset(settings, preset_path(args.nome_preset))
     print(f"Preset salvato in {path}")
     return 0
 

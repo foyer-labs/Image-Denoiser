@@ -46,6 +46,8 @@ class Param:
 class Denoiser(ABC):
     key: str = ""
     label: str = ""
+    #: Riassunto di poche parole mostrato accanto al nome nel menu dei metodi.
+    summary: str = ""
     description: str = ""
     params: tuple[Param, ...] = ()
     #: Pixel di contorno necessari per elaborare un ritaglio senza artefatti ai bordi.

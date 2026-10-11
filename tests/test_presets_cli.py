@@ -55,3 +55,36 @@ def test_cli_analizza(dng_pair, capsys):
     out = capsys.readouterr().out
     assert "Bayer RGGB" in out
     assert "livello 3" in out
+
+
+def test_builtin_preset_changes_only_declared_fields():
+    from denoiser.presets import apply_preset
+
+    current = Settings()
+    current.denoise.raw_stage = "rgb"
+    current.denoise.hot_pixel_threshold = 8
+    current.output.format = "jpeg"
+    _, content = BUILTIN_PRESETS["Forte (ISO alti)"]
+    result = apply_preset(current, content)
+    assert result.denoise.algorithm == "nlm"
+    assert result.denoise.raw_stage == "rgb" and result.denoise.hot_pixel_threshold == 8
+    assert result.output.format == "jpeg"
+
+
+def test_user_preset_sections_and_names(tmp_path):
+    from denoiser.presets import apply_preset, clean_name, read_preset
+
+    s = Settings()
+    s.denoise.algorithm = "bilateral"
+    s.output.format = "png"
+    s.output.overwrite = True
+    path = save_preset(s, tmp_path / "ISO 6400 v1.5", sections=("denoise",))
+    assert path.name == "ISO 6400 v1.5.json"
+    data = read_preset(path)
+    assert set(data) == {"denoise"}
+    current = Settings()
+    current.output.format = "tiff"
+    assert apply_preset(current, data).output.format == "tiff"
+    full = save_preset(s, tmp_path / "tutto")
+    assert read_preset(full)["output"]["overwrite"] is False
+    assert clean_name("a/b:c") == "a_b_c"

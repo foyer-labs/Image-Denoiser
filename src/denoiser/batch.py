@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
@@ -70,15 +71,26 @@ def export_image(
     progress: ProgressFn | None = None,
     notes: list[str] | None = None,
 ) -> Path:
-    """Elabora l'intera foto, la salva nel formato scelto e copia i metadati dell'originale."""
-    path = _write_output(image, analysis, settings, destination, progress)
-    if settings.output.copy_metadata and image.meta.source.is_file():
-        if progress is not None:
-            progress(1.0, "Copia dei metadati")
-        problem = copy_metadata(image.meta.source, path)
-        if problem and notes is not None:
-            notes.append(problem)
-    return path
+    """Elabora l'intera foto, la salva nel formato scelto e copia i metadati dell'originale.
+
+    Il file viene scritto con un nome temporaneo e rinominato solo alla fine: un'elaborazione
+    interrotta (errore, annullamento, chiusura) non lascia mai un file a metà.
+    """
+    destination = Path(destination)
+    temporary = destination.with_name(f"{destination.stem}.parziale{destination.suffix}")
+    try:
+        written = _write_output(image, analysis, settings, temporary, progress)
+        if settings.output.copy_metadata and image.meta.source.is_file():
+            if progress is not None:
+                progress(1.0, "Copia dei metadati")
+            problem = copy_metadata(image.meta.source, written)
+            if problem and notes is not None:
+                notes.append(problem)
+        os.replace(written, destination)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    return destination
 
 
 def _write_output(

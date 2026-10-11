@@ -1,33 +1,58 @@
-"""Preset: impostazioni salvate in JSON, riusabili su una foto o su una cartella intera."""
+"""Preset: impostazioni salvate in JSON, riusabili su una foto o su una cartella intera.
+
+Un preset contiene solo le sezioni (e i campi) che dichiara: applicandolo si cambiano
+quelli e il resto delle impostazioni correnti resta com'è. I preset predefiniti
+cambiano solo la riduzione del rumore; quelli dell'utente le sezioni scelte al salvataggio.
+"""
 
 from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
+from typing import Any
 
-from .settings import DenoiseSettings, Settings
+from .settings import Settings
 
 PRESET_SUFFIX = ".json"
 
+#: Nome -> (descrizione, contenuto parziale).
+BUILTIN_PRESETS: dict[str, tuple[str, dict[str, Any]]] = {
+    "Bilanciato": (
+        "Toglie il rumore misurato: la scelta giusta quasi sempre.",
+        {"denoise": {"algorithm": "wavelet", "luma_strength": 1.0, "chroma_strength": 1.0, "detail": 0.0}},
+    ),
+    "Delicato": (
+        "Lascia un po' di grana naturale e più dettaglio.",
+        {"denoise": {"algorithm": "wavelet", "luma_strength": 0.6, "chroma_strength": 0.9, "detail": 0.15}},
+    ),
+    "Forte (ISO alti)": (
+        "Per foto notturne o a ISO molto alti; più lento.",
+        {"denoise": {"algorithm": "nlm", "luma_strength": 1.3, "chroma_strength": 1.5, "detail": 0.0}},
+    ),
+    "Solo colore": (
+        "Elimina le macchie colorate senza toccare la grana.",
+        {"denoise": {"algorithm": "wavelet", "luma_strength": 0.0, "chroma_strength": 1.2, "detail": 0.0}},
+    ),
+    "Neurale RAW (DRUNet)": (
+        "Intelligenza artificiale: in genere la qualità più alta. Lenta senza scheda video.",
+        {"denoise": {"algorithm": "drunet", "luma_strength": 1.0, "chroma_strength": 1.0, "detail": 0.0}},
+    ),
+    "Neurale JPG (SCUNet)": (
+        "Intelligenza artificiale addestrata su foto reali: ideale per JPG e smartphone.",
+        {"denoise": {"algorithm": "scunet", "luma_strength": 1.0, "chroma_strength": 1.0, "detail": 0.0}},
+    ),
+}
 
-def _builtin() -> dict[str, Settings]:
-    def make(**denoise) -> Settings:
-        s = Settings()
-        s.denoise = DenoiseSettings(**denoise)
-        return s
+#: Sezioni che un preset dell'utente può contenere, con etichetta italiana.
+SECTIONS = {"denoise": "Riduzione del rumore", "develop": "Sviluppo RAW", "tone": "Luminosità", "output": "Salvataggio"}
 
-    return {
-        "Bilanciato": make(algorithm="wavelet", luma_strength=1.0, chroma_strength=1.0),
-        "Delicato": make(algorithm="wavelet", luma_strength=0.6, chroma_strength=0.9, detail=0.15),
-        "Forte (ISO alti)": make(algorithm="nlm", luma_strength=1.3, chroma_strength=1.5),
-        "Solo colore": make(algorithm="wavelet", luma_strength=0.0, chroma_strength=1.2),
-        "Neurale RAW (DRUNet)": make(algorithm="drunet", luma_strength=1.0, chroma_strength=1.0),
-        "Neurale JPG (SCUNet)": make(algorithm="scunet", luma_strength=1.0, chroma_strength=1.0),
-    }
+_INVALID = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
-BUILTIN_PRESETS = _builtin()
+class PresetError(ValueError):
+    pass
 
 
 def user_presets_dir() -> Path:
@@ -35,36 +60,84 @@ def user_presets_dir() -> Path:
     return Path(base) / "Denoiser" / "preset"
 
 
-def save_preset(settings: Settings, path: str | Path) -> Path:
+def clean_name(name: str) -> str:
+    """Nome valido come nome di file (caratteri non ammessi sostituiti)."""
+    cleaned = _INVALID.sub("_", name).strip(" .")
+    if not cleaned:
+        raise PresetError("Il nome del preset è vuoto.")
+    return cleaned
+
+
+def preset_path(name: str, folder: Path | None = None) -> Path:
+    return (folder or user_presets_dir()) / (clean_name(name) + PRESET_SUFFIX)
+
+
+def save_preset(settings: Settings, path: str | Path, sections: tuple[str, ...] | None = None) -> Path:
+    """Salva le sezioni indicate (tutte se None) nel file ``path`` (estensione .json aggiunta se manca)."""
     path = Path(path)
     if path.suffix.lower() != PRESET_SUFFIX:
-        path = path.with_suffix(PRESET_SUFFIX)
+        path = path.with_name(path.name + PRESET_SUFFIX)  # non with_suffix: "v1.5" resterebbe "v1"
+    data = settings.to_dict()
+    if sections is not None:
+        data = {k: v for k, v in data.items() if k in sections}
+    if "output" in data:
+        data["output"]["overwrite"] = False  # mai sovrascrivere in silenzio per effetto di un preset
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(settings.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     return path
 
 
+def read_preset(path: str | Path) -> dict[str, Any]:
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise PresetError(f"Impossibile leggere il preset {Path(path).name}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise PresetError(f"Il file {Path(path).name} non è un preset valido.")
+    return data
+
+
+def apply_preset(current: Settings, preset: dict[str, Any]) -> Settings:
+    """Applica un preset (anche parziale) alle impostazioni correnti, senza modificarle."""
+    merged = current.to_dict()
+    for section, values in preset.items():
+        if section in merged and isinstance(values, dict):
+            if section == "denoise" and values.get("algorithm") not in (None, merged["denoise"]["algorithm"]):
+                merged["denoise"]["params"] = {}  # i parametri sono specifici dell'algoritmo
+            merged[section].update(values)
+    return Settings.from_dict(merged)
+
+
 def load_preset(path: str | Path) -> Settings:
-    return Settings.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
+    """Preset di un file applicato alle impostazioni predefinite."""
+    return apply_preset(Settings(), read_preset(path))
 
 
-def list_presets() -> dict[str, Settings | Path]:
-    """Preset predefiniti e preset dell'utente (questi ultimi caricati su richiesta)."""
-    result: dict[str, Settings | Path] = dict(BUILTIN_PRESETS)
+def list_presets() -> dict[str, tuple[str, dict[str, Any] | Path]]:
+    """Nome -> (descrizione, contenuto per i predefiniti oppure percorso per quelli dell'utente)."""
+    result: dict[str, tuple[str, dict[str, Any] | Path]] = {
+        name: (desc, data) for name, (desc, data) in BUILTIN_PRESETS.items()
+    }
     folder = user_presets_dir()
     if folder.is_dir():
         for p in sorted(folder.glob(f"*{PRESET_SUFFIX}")):
-            result[p.stem] = p
+            name = p.stem if p.stem not in BUILTIN_PRESETS else f"{p.stem} (mio)"
+            result[name] = ("Preset salvato da te.", p)
     return result
 
 
-def resolve_preset(name_or_path: str) -> Settings:
+def preset_content(entry: dict[str, Any] | Path) -> dict[str, Any]:
+    return read_preset(entry) if isinstance(entry, Path) else entry
+
+
+def resolve_preset(name_or_path: str, base: Settings | None = None) -> Settings:
     """Accetta il nome di un preset (predefinito o dell'utente) oppure il percorso di un file JSON."""
+    base = base or Settings()
     candidate = Path(name_or_path)
     if candidate.suffix.lower() == PRESET_SUFFIX and candidate.is_file():
-        return load_preset(candidate)
+        return apply_preset(base, read_preset(candidate))
     available = list_presets()
-    for name, value in available.items():
+    for name, (_, entry) in available.items():
         if name.lower() == name_or_path.lower():
-            return load_preset(value) if isinstance(value, Path) else Settings.from_dict(value.to_dict())
-    raise ValueError(f"Preset «{name_or_path}» non trovato. Disponibili: {', '.join(available)}")
+            return apply_preset(base, preset_content(entry))
+    raise PresetError(f"Preset «{name_or_path}» non trovato. Disponibili: {', '.join(available)}")

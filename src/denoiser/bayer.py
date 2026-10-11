@@ -195,9 +195,11 @@ def _joint_sensor_denoise(
     # Rumore dopo la trasformata: 1 su R e B, 1/sqrt(2) sulla media dei verdi.
     per_channel = np.sqrt((1.0 + 0.5 + 1.0) / 3.0) / scale
     cleaned = joint_denoise(algorithm, rgb, np.full(3, per_channel), settings, progress) * scale
-    if settings.chroma_strength > 0:
+    # Con le reti "cieche" la forza è una miscela che non supera 1: lo stesso limite qui.
+    diff_strength = min(settings.chroma_strength, 1.0) if algorithm.blind else settings.chroma_strength
+    if diff_strength > 0:
         wavelet = get_algorithm("wavelet")
-        diff = wavelet.denoise(np.ascontiguousarray(diff), float(settings.chroma_strength), {})
+        diff = wavelet.denoise(np.ascontiguousarray(diff), float(diff_strength), {})
     g = cleaned[..., 1]
     return np.stack(
         [cleaned[..., 0], g + diff / np.sqrt(2), g - diff / np.sqrt(2), cleaned[..., 2]], axis=-1

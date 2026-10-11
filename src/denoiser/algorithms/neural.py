@@ -66,26 +66,34 @@ class NeuralDenoiser(Denoiser):
 
 
 _DEVICE = Param(
-    "device", "Dispositivo", "choice", "auto",
-    choices={"auto": "Automatico (GPU se disponibile)", "cpu": "Solo CPU"},
-    tooltip="Con una scheda video la rete è molte volte più veloce (DirectML o CUDA).",
+    "device", "Calcolo su", "choice", "auto",
+    choices={"auto": "Scheda video se disponibile (consigliato)", "cpu": "Solo processore (CPU)"},
+    tooltip="Con una scheda video la rete è molte volte più veloce. «Solo processore» serve solo se la "
+    "scheda video dà problemi.",
+)
+
+_TILE_TIP = (
+    "La foto viene elaborata a pezzi quadrati di questa misura. Non cambia il risultato: incide solo su "
+    "velocità e memoria. Se compare un errore di memoria, scegli un valore più piccolo."
 )
 
 
 class DRUNetDenoiser(NeuralDenoiser):
     key = "drunet"
     model_key = "drunet"
-    label = "DRUNet (neurale)"
+    label = "DRUNet (IA)"
+    summary = "qualità massima, lento senza scheda video"
     description = (
-        "Rete neurale che riceve il livello di rumore misurato: in genere la qualità più alta. "
-        "Lenta senza GPU. Il modello (125 MB) si scarica una volta sola."
+        "Intelligenza artificiale che usa il rumore misurato in questa foto: in genere dà la qualità "
+        "migliore, e i cursori funzionano come per gli altri metodi. Senza scheda video compatibile usa "
+        "il processore ed è lenta (anche alcuni minuti per foto)."
     )
     params = (
         _DEVICE,
         Param(
-            "tile", "Tassello (px)", "choice", "512",
-            choices={"256": "256", "512": "512", "1024": "1024"},
-            tooltip="Dimensione dei pezzi elaborati. Tasselli grandi sono più veloci ma usano più memoria della GPU.",
+            "tile", "Blocchi di calcolo", "choice", "512",
+            choices={"256": "256 px (poca memoria)", "512": "512 px (consigliato)", "1024": "1024 px (veloce)"},
+            tooltip=_TILE_TIP,
         ),
     )
 
@@ -93,17 +101,18 @@ class DRUNetDenoiser(NeuralDenoiser):
 class SCUNetDenoiser(NeuralDenoiser):
     key = "scunet"
     model_key = "scunet"
-    label = "SCUNet (neurale)"
+    label = "SCUNet (IA)"
+    summary = "per JPG e foto da smartphone"
     description = (
-        "Rete neurale addestrata su rumore reale di fotocamere e smartphone: adatta soprattutto "
-        "ai JPG. Stima il rumore da sola; la forza (fino a 1) miscela il risultato con l'originale. "
-        "Il modello (69 MB) si scarica una volta sola."
+        "Intelligenza artificiale addestrata su foto reali di fotocamere e smartphone: stima il rumore da "
+        "sola. Qui «Grana» e «Macchie di colore» decidono quanto del risultato usare (1 = tutto, "
+        "0 = foto originale)."
     )
     params = (
         _DEVICE,
         Param(
-            "tile", "Tassello (px)", "choice", "256",
-            choices={"256": "256", "512": "512"},
-            tooltip="Dimensione dei pezzi elaborati. 512 è più veloce ma richiede molta più memoria.",
+            "tile", "Blocchi di calcolo", "choice", "256",
+            choices={"256": "256 px (consigliato)", "512": "512 px (più memoria)"},
+            tooltip=_TILE_TIP,
         ),
     )

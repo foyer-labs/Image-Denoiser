@@ -216,3 +216,29 @@ def process_image(
     """Elabora l'intera immagine."""
     analysis = analysis or analyze(image)
     return render(image, analysis, settings, progress=progress)
+
+
+#: Soglie del giudizio sul rumore (deviazione relativa sui grigi medi, in %).
+_NOISE_LEVELS = ((2.0, "basso"), (5.0, "medio"), (10.0, "alto"))
+
+
+def noise_judgement(image: ImageData, analysis: Analysis) -> tuple[str, str]:
+    """Giudizio a parole sul rumore della foto ("basso", "medio", "alto", "molto alto") e dettaglio numerico."""
+    if image.raw_source is not None:
+        model = image.raw_source.sensor_model
+    else:
+        model = analysis.noise_model
+    if model is not None:
+        # Deviazione del rumore sui grigi medi (18%), in percentuale del segnale.
+        percent = float(np.mean([np.sqrt(model.a[c] * 0.18 + model.b[c]) / 0.18 * 100 for c in range(3)]))
+        detail = f"circa {percent:.1f}% nei mezzitoni".replace(".", ",")
+    else:
+        # Immagini già sviluppate: deviazione per canale rispetto al valore massimo, rapportata ai mezzitoni.
+        percent = float(np.sqrt(np.mean(np.square(analysis.channel_sigma)))) / 0.5 * 100
+        detail = f"circa {percent:.1f}% nei mezzitoni".replace(".", ",")
+    level = "molto alto"
+    for limit, label in _NOISE_LEVELS:
+        if percent < limit:
+            level = label
+            break
+    return level, detail

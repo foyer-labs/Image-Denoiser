@@ -16,14 +16,15 @@ _RANGE_PER_SIGMA = 2.0
 class BilateralDenoiser(Denoiser):
     key = "bilateral"
     label = "Bilaterale"
+    summary = "velocissimo, qualità base"
     description = (
         "Media dei pixel vicini con valori simili. Molto veloce e semplice, "
         "ma a forze alte produce un effetto «acquerello»."
     )
     params = (
         Param(
-            "spatial_sigma", "Raggio spaziale (px)", "float", 3.0, 0.5, 15.0, 0.5,
-            tooltip="Ampiezza della zona su cui si fa la media.",
+            "spatial_sigma", "Raggio", "float", 3.0, 0.5, 15.0, 0.5,
+            tooltip="Ampiezza in pixel della zona su cui si fa la media. Più grande = più liscio. Consigliato: 3.",
         ),
     )
     margin = 32

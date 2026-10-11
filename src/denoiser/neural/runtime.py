@@ -22,11 +22,21 @@ def available_providers() -> list[str]:
     return list(ort.get_available_providers())
 
 
-def describe_devices() -> str:
-    gpu = [p for p in available_providers() if p in _GPU_PROVIDERS]
+def gpu_status() -> tuple[bool, str]:
+    """(scheda video utilizzabile?, descrizione per l'utente)."""
+    try:
+        gpu = [p for p in available_providers() if p in _GPU_PROVIDERS]
+    except Exception:
+        gpu = []
     names = {"CUDAExecutionProvider": "NVIDIA CUDA", "DmlExecutionProvider": "DirectML",
              "CoreMLExecutionProvider": "Core ML"}
-    return "GPU: " + ", ".join(names[p] for p in gpu) if gpu else "Nessuna accelerazione GPU disponibile: si usa la CPU"
+    if gpu:
+        return True, "Scheda video: " + ", ".join(names[p] for p in gpu)
+    return False, "Scheda video non disponibile: si usa il processore (più lento)"
+
+
+def describe_devices() -> str:
+    return gpu_status()[1]
 
 
 class InferenceSessionWrapper:

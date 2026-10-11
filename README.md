@@ -74,15 +74,43 @@ un'impronta SHA-256 e convertito in ONNX sul tuo computer; da quel momento tutto
 
 ## Interfaccia grafica
 
-- **Apri** (Ctrl+O) o trascina una foto nella finestra.
-- La **linea bianca** separa *prima* (a sinistra) e *dopo* (a destra): trascinala.
-- **Rotellina** per lo zoom, **trascina** per spostarti, **doppio clic** per passare
-  da «adatta alla finestra» a 100%. Il rumore si giudica al 100%: l'anteprima del denoise
-  viene calcolata sulla zona visibile quando lo zoom è sufficiente.
-- Tutti i parametri sono nel pannello a destra; passa il mouse su un controllo per la spiegazione.
-- **Esporta** (Ctrl+E) salva con le impostazioni di *Uscita*; **Elabora più file…** (Ctrl+B)
-  applica le impostazioni correnti a più foto.
-- **Preset**: quelli predefiniti cambiano solo il denoise; *Salva preset…* salva tutto.
+Tema scuro, tutto in italiano. Flusso in tre passi: **apri → guarda al 100% → esporta**.
+
+- **Apri** (Ctrl+O), trascina una foto nella finestra o scegli tra i **file recenti** nella
+  pagina iniziale. Trascinando più foto o una cartella si apre *Elabora più file*.
+- La foto si apre **al 100% al centro**: il rumore si giudica a pixel reali. La **linea** separa
+  *prima* (sinistra) e *dopo* (destra); trascina la maniglia, sposta la foto, rotellina per lo zoom,
+  doppio clic per scegliere il punto da controllare.
+- **Confronto** (tasto `\`): tendina → solo dopo → solo prima → **rumore tolto** (la differenza
+  amplificata ×4: se vedi contorni, la forza è eccessiva). Tieni premuto **Spazio** per vedere l'originale.
+- L'anteprima mostra quando è *da aggiornare* o *in calcolo*, e quanta parte del rumore stimato è stata tolta.
+- Pannello a destra: **Foto** (giudizio sul rumore misurato), **Punto di partenza** (preset, con
+  «(modificato)» quando li cambi; *Salva come preset…* sceglie le sezioni da salvare), **Riduzione del
+  rumore** (Grana, Macchie di colore, Recupero dettaglio, pixel caldi, metodo e regolazioni avanzate),
+  **Sviluppo RAW**, **Salvataggio** (con l'anteprima del percorso finale). La spiegazione del controllo
+  sotto il mouse compare in fondo al pannello; doppio clic su un cursore = valore consigliato.
+- I modelli neurali si scaricano dal pannello o facendo clic sull'avviso nell'anteprima, con avanzamento.
+- **Esporta** (Ctrl+E) o **Esporta come…** (Ctrl+Maiusc+E). Al termine un avviso offre *Apri cartella*,
+  *Mostra il file*, *Apri la foto*. Le operazioni lunghe si interrompono con **Esc** o *Interrompi*:
+  nessun file resta scritto a metà.
+- **Elabora più file…** (Ctrl+B): file e cartelle (anche sottocartelle), preset, cosa fare se il file
+  esiste, avanzamento con tempo stimato, interruzione e riepilogo degli errori.
+- **Annulla / Ripeti** (Ctrl+Z / Ctrl+Y) per tutte le regolazioni; *Valori consigliati* ripristina il denoise.
+- **Aiuto → Guida rapida** (F1) riassume l'uso e tutte le scorciatoie.
+
+| Scorciatoia | Azione |
+|---|---|
+| Ctrl+O | Apri |
+| Ctrl+E / Ctrl+Maiusc+E | Esporta / Esporta come |
+| Ctrl+B | Elabora più file |
+| Ctrl+Z / Ctrl+Y | Annulla / Ripeti |
+| Ctrl+0 / Ctrl+1 / Ctrl+2 | Adatta / 100% / 200% |
+| Ctrl + / Ctrl − | Zoom |
+| Frecce (+ Maiusc) | Sposta la vista |
+| Spazio (tenuto) | Mostra l'originale |
+| `\` | Cambia confronto |
+| Esc | Interrompe l'operazione in corso |
+| F1 | Guida rapida |
 
 ## Formati di uscita e metadati
 

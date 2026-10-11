@@ -9,7 +9,9 @@ from pathlib import Path
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
+from ..io.formats import is_supported
 from .main_window import MainWindow
+from .style import apply_theme
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -17,10 +19,11 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication(argv)
     app.setApplicationName("Denoiser")
     app.setOrganizationName("Denoiser")
+    apply_theme(app)
     window = MainWindow()
     window.show()
     # Una foto passata da riga di comando (o trascinata sull'icona dell'eseguibile) viene aperta subito.
-    files = [Path(a) for a in argv[1:] if Path(a).is_file()]
+    files = [Path(a) for a in argv[1:] if Path(a).is_file() and is_supported(Path(a))]
     if files:
         window.open_path(files[0])
     # Usato dalla build automatica per verificare che l'eseguibile si avvii.

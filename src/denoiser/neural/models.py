@@ -44,8 +44,8 @@ MODELS: dict[str, ModelSpec] = {
         size_mb=125,
         license="MIT (KAIR, Kai Zhang)",
         description=(
-            "Rete convoluzionale (Zhang et al., 2021) addestrata su rumore gaussiano: riceve il "
-            "livello di rumore misurato, quindi la forza si regola come per gli algoritmi classici."
+            "Intelligenza artificiale (Zhang et al., 2021) che riceve il rumore misurato nella foto: "
+            "la forza si regola come per gli altri metodi."
         ),
         noise_level_input=True,
         multiple=8,
@@ -58,9 +58,8 @@ MODELS: dict[str, ModelSpec] = {
         size_mb=69,
         license="Apache 2.0 (SCUNet, Kai Zhang)",
         description=(
-            "Rete mista convoluzione/Transformer (Zhang et al., 2023) addestrata su rumore reale "
-            "di fotocamere e smartphone. È «cieca»: stima da sola il rumore; la forza miscela il "
-            "risultato con l'originale."
+            "Intelligenza artificiale (Zhang et al., 2023) addestrata su rumore reale di fotocamere e "
+            "smartphone: stima da sola il rumore; la forza miscela il risultato con l'originale."
         ),
         noise_level_input=False,
         multiple=64,

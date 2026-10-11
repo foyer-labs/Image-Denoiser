@@ -1,38 +1,70 @@
-"""Esecuzione delle elaborazioni in background, per non bloccare l'interfaccia."""
+"""Esecuzione delle elaborazioni in background, con avanzamento e annullamento."""
 
 from __future__ import annotations
 
+import threading
+import time
 import traceback
 from typing import Any, Callable
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 
 
+class Cancelled(Exception):
+    """Sollevata dalla funzione di avanzamento quando l'utente annulla."""
+
+
 class TaskSignals(QObject):
     finished = Signal(object)
-    failed = Signal(str)
+    failed = Signal(str, str)  # messaggio per l'utente, dettagli tecnici
+    cancelled = Signal()
     progress = Signal(float, str)
 
 
 class Task(QRunnable):
-    """Esegue ``fn(*args, **kwargs)`` in un thread; se ``with_progress`` passa anche ``progress=``."""
+    """Esegue ``fn(*args, **kwargs)`` in un thread.
+
+    Con ``with_progress`` passa anche ``progress=``: una funzione che inoltra l'avanzamento
+    all'interfaccia e, se è stato chiesto l'annullamento, interrompe il lavoro.
+    """
 
     def __init__(self, fn: Callable[..., Any], *args: Any, with_progress: bool = False, **kwargs: Any):
         super().__init__()
+        self.setAutoDelete(False)
         self.signals = TaskSignals()
         self._fn = fn
         self._args = args
         self._kwargs = kwargs
+        self._cancel = threading.Event()
+        self.started_at = 0.0
         if with_progress:
-            self._kwargs["progress"] = self.signals.progress.emit
+            self._kwargs["progress"] = self._progress
+
+    def cancel(self) -> None:
+        self._cancel.set()
+
+    @property
+    def is_cancelled(self) -> bool:
+        return self._cancel.is_set()
+
+    def _progress(self, fraction: float, message: str) -> None:
+        if self._cancel.is_set():
+            raise Cancelled()
+        self.signals.progress.emit(float(fraction), message)
 
     def run(self) -> None:
+        self.started_at = time.perf_counter()
         try:
+            if self._cancel.is_set():
+                raise Cancelled()
             result = self._fn(*self._args, **self._kwargs)
+            if self._cancel.is_set():
+                raise Cancelled()
+        except Cancelled:
+            self.signals.cancelled.emit()
         except Exception as exc:  # mostrato all'utente
-            detail = str(exc) or exc.__class__.__name__
-            traceback.print_exc()
-            self.signals.failed.emit(detail)
+            detail = traceback.format_exc()
+            self.signals.failed.emit(str(exc) or exc.__class__.__name__, detail)
         else:
             self.signals.finished.emit(result)
 
@@ -40,3 +72,32 @@ class Task(QRunnable):
 def start(task: Task) -> Task:
     QThreadPool.globalInstance().start(task)
     return task
+
+
+class EtaEstimator:
+    """Stima del tempo rimanente a partire dalla frazione completata."""
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self._start = time.perf_counter()
+        self._last_label = ""
+
+    def text(self, fraction: float) -> str:
+        elapsed = time.perf_counter() - self._start
+        if fraction <= 0.02 or elapsed < 2.0:
+            return ""
+        remaining = elapsed * (1.0 - fraction) / fraction
+        return "circa " + format_duration(remaining) + " rimanenti"
+
+
+def format_duration(seconds: float) -> str:
+    seconds = max(0, int(round(seconds)))
+    if seconds < 60:
+        return f"{seconds} s"
+    minutes, sec = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes} min {sec:02d} s" if minutes < 10 else f"{minutes} min"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes:02d} min"

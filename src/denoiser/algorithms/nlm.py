@@ -17,19 +17,22 @@ _H_PER_SIGMA = 1.0
 class NonLocalMeansDenoiser(Denoiser):
     key = "nlm"
     label = "Non-Local Means"
+    summary = "conserva trame e bordi, più lento"
     description = (
-        "Per ogni pixel cerca nei dintorni piccole zone simili e ne fa la media. "
-        "Preserva bene trame ripetitive e bordi; più lento della wavelet."
+        "Per ogni punto cerca nei dintorni piccole zone simili e ne fa la media. "
+        "Conserva bene trame ripetitive e bordi; più lento della wavelet."
     )
     params = (
         Param(
-            "patch_size", "Dimensione zona di confronto", "choice", "7",
-            choices={"3": "3 px", "5": "5 px", "7": "7 px", "9": "9 px"},
-            tooltip="Zone più grandi riconoscono meglio le strutture ma ammorbidiscono i dettagli fini.",
+            "patch_size", "Zona di confronto", "choice", "7",
+            choices={"3": "3 px (dettagli fini)", "5": "5 px", "7": "7 px (consigliata)", "9": "9 px (più liscio)"},
+            tooltip="Grandezza dei pezzetti di foto confrontati tra loro. Zone più grandi riconoscono meglio "
+            "le strutture ma ammorbidiscono i dettagli fini.",
         ),
         Param(
-            "search_window", "Area di ricerca (px)", "int", 21, 7, 41, 2,
-            tooltip="Quanto lontano cercare zone simili. Il tempo cresce con il quadrato di questo valore.",
+            "search_window", "Area di ricerca", "int", 21, 7, 41, 2,
+            tooltip="Quanto lontano (in pixel) cercare zone simili. Più grande = risultato più pulito ma molto "
+            "più lento (il tempo cresce con il quadrato). Consigliato: 21.",
         ),
     )
 

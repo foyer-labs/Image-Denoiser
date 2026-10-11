@@ -7,7 +7,7 @@ from typing import Any
 
 #: Modalità di bilanciamento del bianco per i RAW, con etichetta italiana.
 WB_MODES: dict[str, str] = {
-    "camera": "Come scattato",
+    "camera": "Come scattato (consigliato)",
     "auto": "Automatico",
     "daylight": "Luce diurna",
     "custom": "Personalizzato",
@@ -15,26 +15,26 @@ WB_MODES: dict[str, str] = {
 
 #: Algoritmi di demosaicizzazione offerti (tutti disponibili nelle build standard di rawpy).
 DEMOSAIC_ALGORITHMS: dict[str, str] = {
-    "AHD": "AHD (predefinito)",
-    "AAHD": "AAHD",
-    "DCB": "DCB",
-    "DHT": "DHT",
-    "PPG": "PPG",
-    "VNG": "VNG",
-    "LINEAR": "Bilineare (veloce)",
+    "AHD": "AHD (consigliato)",
+    "AAHD": "AAHD (come AHD, meno falsi colori)",
+    "DCB": "DCB (dettagli fini)",
+    "DHT": "DHT (dettagli fini, ISO bassi)",
+    "PPG": "PPG (veloce)",
+    "VNG": "VNG (morbido, utile con molto rumore)",
+    "LINEAR": "Bilineare (molto veloce, qualità bassa)",
 }
 
 #: Momento in cui si applica il denoise ai RAW.
 RAW_STAGES: dict[str, str] = {
-    "sensor": "Sul sensore, prima della demosaicizzazione (livello 3)",
-    "rgb": "Sull'immagine sviluppata (livello 2)",
+    "sensor": "Prima dello sviluppo (consigliato)",
+    "rgb": "Dopo lo sviluppo",
 }
 
 OUTPUT_FORMATS: dict[str, str] = {
     "tiff": "TIFF",
     "jpeg": "JPEG",
     "png": "PNG",
-    "dng": "DNG (solo da RAW)",
+    "dng": "DNG (RAW ripulito)",
 }
 
 

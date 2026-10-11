@@ -15,35 +15,49 @@ from .base import Denoiser, Param, to_unit_range
 class WaveletDenoiser(Denoiser):
     key = "wavelet"
     label = "Wavelet"
+    summary = "veloce, ottimo sul colore (consigliato)"
     description = (
-        "Scompone l'immagine in dettagli a varie scale e attenua quelli più piccoli del rumore. "
-        "Veloce, ottimo soprattutto sul rumore di colore."
+        "Scompone la foto in dettagli grandi e piccoli e attenua quelli più deboli del rumore. "
+        "Veloce, ottimo soprattutto sulle macchie di colore."
     )
     params = (
         Param(
-            "wavelet", "Famiglia wavelet", "choice", "sym4",
-            choices={"db1": "Haar", "db2": "Daubechies 2", "sym4": "Symlet 4", "coif1": "Coiflet 1", "bior2.2": "Biortogonale 2.2"},
-            tooltip="Forma delle onde usate per scomporre l'immagine. Symlet 4 è un buon compromesso.",
+            "wavelet", "Forma della scomposizione", "choice", "sym4",
+            choices={
+                "sym4": "Symlet 4 (consigliata)",
+                "db1": "Haar (squadrata: può creare blocchi)",
+                "db2": "Daubechies 2",
+                "coif1": "Coiflet 1",
+                "bior2.2": "Biortogonale 2.2",
+            },
+            tooltip="Il tipo di «mattoncino» con cui la foto viene divisa in dettagli grandi e piccoli. "
+            "Cambia poco il risultato: lascia Symlet 4 salvo artefatti a blocchi o righe.",
         ),
         Param(
-            "method", "Metodo di soglia", "choice", "BayesShrink",
-            choices={"BayesShrink": "BayesShrink (adattivo)", "VisuShrink": "VisuShrink (forte)"},
-            tooltip="BayesShrink adatta la soglia a ogni scala e preserva più dettaglio; VisuShrink è più aggressivo.",
+            "method", "Come riconoscere il rumore", "choice", "BayesShrink",
+            choices={
+                "BayesShrink": "Adattivo: conserva il dettaglio (consigliato)",
+                "VisuShrink": "Uniforme: più forte e più liscio",
+            },
+            tooltip="«Adattivo» (BayesShrink) decide caso per caso quanto togliere a ogni grandezza di dettaglio. "
+            "«Uniforme» (VisuShrink) toglie di più ovunque.",
         ),
         Param(
-            "mode", "Tipo di soglia", "choice", "soft",
-            choices={"soft": "Morbida", "hard": "Netta"},
-            tooltip="La soglia morbida dà risultati più naturali; quella netta conserva più contrasto ma può lasciare artefatti.",
+            "mode", "Taglio del rumore", "choice", "soft",
+            choices={"soft": "Morbido: naturale (consigliato)", "hard": "Netto: più contrasto, possibili puntini"},
+            tooltip="Il taglio morbido dà un risultato più naturale; quello netto conserva più contrasto "
+            "ma può lasciare piccoli puntini.",
         ),
         Param(
-            "levels", "Livelli (0 = automatico)", "int", 4, 0, 8, 1,
-            tooltip="Numero di scale analizzate. Più livelli agiscono anche sul rumore a grana grossa, "
-            "ma rendono l'anteprima di una zona meno fedele all'esportazione.",
+            "levels", "Grandezza della grana trattata", "int", 4, 0, 8, 1,
+            tooltip="Fino a che dimensione di macchia intervenire (0 = automatica). 1–2: solo grana finissima. "
+            "4: grana normale (consigliato). 5–8: anche macchie grandi, tipiche degli ISO molto alti; "
+            "con valori alti l'anteprima di una zona può differire un po' dalla foto esportata.",
         ),
         Param(
-            "cycle_spin", "Spostamenti anti-artefatto", "int", 1, 0, 3, 1,
-            tooltip="Media di più elaborazioni leggermente spostate: riduce gli artefatti a blocchi. "
-            "Il tempo cresce rapidamente (0 = 1×, 1 = 4×, 2 = 9×, 3 = 16×).",
+            "cycle_spin", "Passaggi anti-quadrettatura", "int", 1, 0, 3, 1,
+            tooltip="Ripete il calcolo spostando di poco la foto e fa la media, per eliminare piccoli artefatti "
+            "a blocchi. Tempo: 0 = ×1, 1 = ×4 (consigliato), 2 = ×9, 3 = ×16.",
         ),
     )
     margin = 64
