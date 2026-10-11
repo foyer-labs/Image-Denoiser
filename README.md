@@ -94,6 +94,11 @@ Misure di qualità e dettagli tecnici: **[come funziona](docs/come-funziona.md)*
 | [Novità](CHANGELOG.md) | Cronologia delle versioni |
 | [Licenze di terze parti](THIRD-PARTY-NOTICES.md) | Librerie, modelli e strumenti inclusi o scaricati |
 
+## Autori
+
+Ideato e curato da [foyer-labs](https://github.com/foyer-labs), sviluppato con
+[Claude Code](https://claude.com/claude-code).
+
 ## Licenza
 
 Il codice è distribuito con **[licenza MIT](LICENSE)**: puoi usarlo, modificarlo, farne un fork e
