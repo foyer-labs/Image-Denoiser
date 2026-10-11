@@ -1,0 +1,111 @@
+# Sviluppo
+
+[← Torna al README](../README.md)
+
+## Ambiente
+
+Serve Python 3.11 o più recente.
+
+```bat
+python -m venv .venv
+.venv\Scripts\activate            :: su Linux/macOS: source .venv/bin/activate
+pip install -e ".[gui,dev]"
+pytest                            :: test
+denoiser-gui                      :: interfaccia
+denoiser analizza foto.nef        :: riga di comando
+```
+
+Extra opzionali di `pyproject.toml`: `gui` (PySide6), `dev` (pytest), `build` (PyInstaller).
+Su Windows viene installato `onnxruntime-directml`, altrove `onnxruntime`.
+
+## Struttura del codice
+
+```
+src/denoiser/
+├── cli.py              riga di comando (elabora, analizza, algoritmi, modelli, preset)
+├── settings.py         impostazioni (dataclass) con lettura tollerante dei valori
+├── presets.py          preset predefiniti e personali
+├── pipeline.py         analisi, anteprima di una zona, resa tonale, giudizio sul rumore
+├── bayer.py            livello 3: denoise dei quattro piani Bayer e sviluppo con LibRaw
+├── raw_noise.py        modello del rumore del sensore e «gemello di rumore»
+├── noise.py            stima del rumore (zone uniformi, inviluppo inferiore)
+├── vst.py              trasformata di Anscombe generalizzata pesata per canale
+├── joint.py            reti neurali: forze separate su luminanza e colore
+├── hotpixel.py         pixel caldi sulle immagini già sviluppate
+├── color.py            trasformazioni di colore (opponente, sRGB)
+├── batch.py            esportazione atomica ed elaborazione di più file
+├── algorithms/         wavelet, nlm, bilateral, neural (interfaccia comune Denoiser/Param)
+├── neural/             lettura sicura dei .pth, grafi ONNX di DRUNet e SCUNet, tasselli, runtime, download
+├── io/                 lettura (RAW, JPG/PNG/TIFF, DNG Converter), scrittura (TIFF/PNG/JPEG/DNG), metadati
+└── gui/                interfaccia PySide6
+    ├── main_window.py  finestra, menu, anteprima, esportazione, annulla/ripeti
+    ├── split_view.py   vista prima/dopo (zoom in pixel fisici, piramide di riduzione)
+    ├── settings_panel.py, widgets.py, batch_dialog.py, style.py, workers.py
+packaging/              PyInstaller: denoiser.spec, icona, punti d'avvio
+tests/                  test pytest con immagini e DNG sintetici
+docs/                   documentazione e schermate
+```
+
+## Test
+
+```bat
+pytest -q
+```
+
+- I test usano immagini sintetiche, compresi **DNG Bayer generati con rumore noto**
+  (`tests/synthetic.py`), così da misurare oggettivamente il miglioramento (PSNR) e controllare
+  orientamento, colori, metadati e DNG di uscita.
+- Le reti ricostruite in ONNX vengono confrontate con implementazioni di riferimento in numpy.
+  Con `DENOISER_TEST_WEIGHTS=<cartella con i .pth>` (e `DENOISER_MODELS_DIR` sulla stessa cartella)
+  si eseguono anche i test con i pesi reali.
+- `tests/test_regressioni.py` contiene i casi emersi nelle revisioni del codice.
+- Per i test dei metadati serve ExifTool nel `PATH` (su Linux: `apt install libimage-exiftool-perl`).
+
+## Eseguibile per Windows
+
+```bat
+pip install -e ".[gui,build]"
+pyinstaller packaging/denoiser.spec --noconfirm
+```
+
+Il risultato è `dist\Denoiser\` con `Denoiser.exe` (interfaccia) e `denoiser-cli.exe`. Per la copia
+completa dei metadati va aggiunto ExifTool in `dist\Denoiser\exiftool\exiftool.exe`: la build
+automatica lo scarica da exiftool.org.
+
+## Build automatica
+
+Il workflow [`.github/workflows/build.yml`](../.github/workflows/build.yml) parte a ogni push:
+
+1. **test** su Windows e Linux;
+2. **build-windows**: crea l'eseguibile, include ExifTool e lo collauda. Esegue la riga di comando
+   su un DNG sintetico (wavelet → TIFF, NLM → DNG), scarica DRUNet ed elabora un'immagine, avvia
+   l'interfaccia. Pubblica lo zip come artefatto *Denoiser-windows* (30 giorni);
+3. **release**: solo per i tag `vX.Y.Z` (vedi sotto).
+
+## Pubblicare una versione
+
+1. Aggiorna la versione in `src/denoiser/__init__.py` e in `pyproject.toml`.
+2. In `CHANGELOG.md` sposta le voci di *Non rilasciato* in una nuova sezione `## [X.Y.Z] - data`.
+3. Fai il commit e invia il tag:
+
+   ```bash
+   git tag -a vX.Y.Z -m "Denoiser X.Y.Z"
+   git push origin vX.Y.Z
+   ```
+
+Il job *release* controlla che il tag corrisponda alla versione del codice e prende le note dalla
+sezione del CHANGELOG. Poi crea la release su GitHub con `Denoiser-windows-X.Y.Z.zip` e la sua
+impronta SHA-256. Le versioni `0.x` e quelle con un trattino (es. `1.0.0-rc1`) vengono segnate
+come *pre-release*.
+
+## Schermate della documentazione
+
+Le schermate in `docs/screenshots/` sono catturate dall'applicazione vera, senza schermo
+(`QT_QPA_PLATFORM=offscreen`), a 1440×900. Le foto di prova sono immagini di esempio di
+scikit-image con rumore sintetico, salvate come DNG con `tests/synthetic.py`.
+
+## Convenzioni
+
+- Codice, commenti, messaggi e documentazione in italiano; nomi di variabili e funzioni in inglese.
+- Ogni testo dell'interfaccia rivolto all'utente evita il gergo tecnico e spiega cosa fare.
+- I pesi dei modelli neurali non vanno mai aggiunti al repository.

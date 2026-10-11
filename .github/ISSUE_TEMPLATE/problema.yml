@@ -1,0 +1,43 @@
+name: Segnala un problema
+description: Qualcosa non funziona come dovrebbe
+labels: ["problema"]
+body:
+  - type: textarea
+    id: cosa
+    attributes:
+      label: Cosa è successo
+      description: Descrivi il problema e cosa ti aspettavi invece.
+    validations:
+      required: true
+  - type: textarea
+    id: passi
+    attributes:
+      label: Come riprodurlo
+      placeholder: |
+        1. Apri la foto …
+        2. Scegli il metodo …
+        3. …
+  - type: input
+    id: versione
+    attributes:
+      label: Versione di Denoiser
+      description: Menu Aiuto → Informazioni su Denoiser
+      placeholder: "0.9.0"
+    validations:
+      required: true
+  - type: input
+    id: foto
+    attributes:
+      label: Fotocamera e formato della foto
+      placeholder: "Nikon Z5 II, NEF senza perdita, ISO 6400"
+  - type: dropdown
+    id: metodo
+    attributes:
+      label: Metodo usato
+      options: ["Wavelet", "Non-Local Means", "Bilaterale", "DRUNet (IA)", "SCUNet (IA)", "Non pertinente"]
+  - type: textarea
+    id: log
+    attributes:
+      label: Dettagli dell'errore
+      description: Se è comparso un errore, incolla i dettagli o il contenuto di %LOCALAPPDATA%\Denoiser\errori.log
+      render: text

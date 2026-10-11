@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Guida all'uso
+    url: https://github.com/foyer-labs/Image-Denoiser/blob/HEAD/docs/guida.md
+    about: Comandi, scorciatoie e domande frequenti.

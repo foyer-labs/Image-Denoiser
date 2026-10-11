@@ -1,0 +1,16 @@
+name: Proponi un miglioramento
+description: Un'idea per rendere Denoiser più utile
+labels: ["miglioramento"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Cosa vorresti
+      description: Descrivi la funzione o il cambiamento, e in quale situazione ti servirebbe.
+    validations:
+      required: true
+  - type: textarea
+    id: alternative
+    attributes:
+      label: Come fai oggi
+      description: Eventuali soluzioni alternative che usi adesso.

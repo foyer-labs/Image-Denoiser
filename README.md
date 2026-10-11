@@ -1,202 +1,100 @@
+<div align="center">
+
+<img src="docs/icona.png" width="96" alt="Icona di Denoiser">
+
 # Denoiser
 
-Riduzione del rumore per foto **RAW** (NEF, CR2/CR3, ARW, RAF, DNG e tutti i formati letti da LibRaw),
-**JPG**, **PNG** e **TIFF**. Funziona interamente in locale, senza servizi esterni.
+**Riduzione del rumore per foto RAW, JPG, PNG e TIFF, interamente sul tuo computer.**
 
-## Come si ottiene l'eseguibile per Windows
+Nessun abbonamento, nessun caricamento nel cloud: la foto non lascia mai il PC.
 
-Ogni push su GitHub avvia la build automatica (*Actions → Test e build Windows*).
-Al termine, nella pagina della build, l'artefatto **Denoiser-windows** contiene uno zip:
-estrailo e avvia `Denoiser\Denoiser.exe`. Nella stessa cartella c'è `denoiser-cli.exe`
-per l'uso da riga di comando.
+[![Test e build Windows](https://github.com/foyer-labs/Image-Denoiser/actions/workflows/build.yml/badge.svg)](https://github.com/foyer-labs/Image-Denoiser/actions/workflows/build.yml)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
+![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)
+![Interfaccia in italiano](https://img.shields.io/badge/interfaccia-italiano-009246)
 
-## Come funziona
+<img src="docs/screenshots/02-confronto.jpg" alt="Confronto prima/dopo al 100% su un RAW ad ISO alto" width="900">
 
-### RAW: denoise sui dati del sensore (livello 3)
+</div>
 
-Per i sensori Bayer (quasi tutte le fotocamere tranne le Fujifilm X-Trans) il rumore viene
-tolto **prima della demosaicizzazione**:
+## Cosa fa
 
-1. il rumore del sensore viene misurato sulla foto stessa (modello Poisson-gaussiano
-   `varianza = a·segnale + b`, stimato sui quattro piani del mosaico Bayer): nessun profilo
-   per fotocamera, quindi funziona anche con modelli nuovi;
-2. la trasformata di Anscombe generalizzata rende il rumore uniforme (deviazione 1);
-3. i piani vengono separati in luminanza e colore e ripuliti con forze indipendenti;
-4. i dati ripuliti vengono riscritti nel RAW e sviluppati da LibRaw.
+- **Toglie il rumore dai RAW prima dello sviluppo**, direttamente sui dati del sensore: è il punto
+  in cui il rumore è più facile da separare dal dettaglio. Funziona con tutte le fotocamere lette da
+  [LibRaw](https://www.libraw.org) (NEF, CR2/CR3, ARW, RAF, ORF, RW2, DNG…) e, tramite Adobe DNG
+  Converter, anche con i modelli più recenti.
+- **Misura il rumore sulla foto stessa**: nessun profilo per fotocamera. Con «Grana» = 1 viene tolto
+  esattamente il rumore misurato.
+- **Separa grana e macchie di colore**, con cursori indipendenti.
+- **Cinque metodi**, tre classici e due reti neurali (DRUNet e SCUNet) che girano in locale, sulla scheda
+  video se disponibile.
+- **Anteprima immediata al 100%** con tendina prima/dopo e vista del «rumore tolto» per controllare
+  di non perdere dettaglio.
+- **Salva in TIFF, PNG, JPEG o DNG**, conservando metadati (EXIF, GPS, parole chiave…) e profilo colore.
+  Il DNG ripulito si apre in Lightroom, darktable e simili come un RAW.
+- **Elabora intere cartelle** con le stesse impostazioni o con un preset.
 
-Con **forza 1** si toglie esattamente il rumore misurato. Sui test con rumore sintetico il
-livello 3 rende circa 1 dB meglio del denoise sull'immagine già sviluppata.
+## Schermate
 
-Per gli altri sensori si usa il **livello 2** (denoise dopo lo sviluppo), con il rumore
-misurato tramite un "gemello di rumore": un rumore sintetico con le stesse caratteristiche
-viene fatto passare per lo stesso sviluppo, così da sapere esattamente come appare dopo la
-demosaicizzazione. Il livello 2 si può anche scegliere manualmente.
+| | |
+|:---:|:---:|
+| <img src="docs/screenshots/01-benvenuto.png" width="420"><br>**Pagina iniziale** con i file recenti | <img src="docs/screenshots/04-adatta.jpg" width="420"><br>**Tutta la foto**, originale a sinistra e risultato a destra |
+| <img src="docs/screenshots/03-rumore-tolto.jpg" width="420"><br>**Rumore tolto** (×4): solo grana uniforme = dettaglio salvo | <img src="docs/screenshots/05-intelligenza-artificiale.jpg" width="420"><br>**Reti neurali** in locale, con stato del modello e della GPU |
+| <img src="docs/screenshots/06-esportazione.jpg" width="420"><br>**Esportazione** con riepilogo e accesso al file | <img src="docs/screenshots/07-elabora-piu-file.png" width="420"><br>**Elabora più file** con avanzamento e riepilogo |
 
-### JPG/PNG/TIFF
+Altre schermate e la spiegazione di ogni comando sono nella **[guida all'uso](docs/guida.md)**.
 
-Il rumore viene stimato dalle zone uniformi della foto e rimosso separatamente su luminanza
-e colore. Il rumore dei JPG è già stato elaborato dalla fotocamera: spesso serve una forza
-un po' più alta di 1.
+## Installazione (Windows)
 
-### Algoritmi
+1. Apri la pagina **[Releases](https://github.com/foyer-labs/Image-Denoiser/releases)** e scarica
+   `Denoiser-windows-<versione>.zip` dall'ultima versione.
+2. Estrai lo zip dove preferisci (es. `C:\Programmi\Denoiser` o il Desktop).
+3. Avvia `Denoiser\Denoiser.exe`. Non serve installare altro: Python, librerie ed ExifTool sono inclusi.
 
-| Algoritmo | Caratteristiche |
+> Al primo avvio Windows SmartScreen può mostrare «App non riconosciuta», perché l'eseguibile non è
+> firmato digitalmente: scegli *Ulteriori informazioni → Esegui comunque*.
+
+Nella stessa cartella c'è `denoiser-cli.exe` per l'uso da [riga di comando](docs/riga-di-comando.md).
+Le versioni intermedie si trovano anche in *Actions → Test e build Windows → artefatto Denoiser-windows*.
+
+**Requisiti:** Windows 10 o 11 a 64 bit, 8 GB di RAM (16 consigliati per foto oltre i 40 MP).
+Una scheda video (NVIDIA, AMD o Intel, tramite DirectML) accelera molto le reti neurali, ma non è necessaria.
+
+## Uso in tre passi
+
+1. **Apri** una foto (`Ctrl+O`, oppure trascinala nella finestra). Si apre al 100%, dove il rumore si vede davvero.
+2. **Regola** «Grana» e «Macchie di colore» se serve: 1 = rumore misurato. Tutto il resto ha già valori consigliati.
+3. **Esporta** (`Ctrl+E`). Per più foto: **Elabora più file** (`Ctrl+B`).
+
+Ogni pulsante mostra la propria scorciatoia, e `F1` apre la guida con l'elenco completo.
+
+## Quale metodo scegliere
+
+| Metodo | Quando usarlo | Velocità |
+|---|---|---|
+| **Wavelet** (predefinito) | Uso generale, ottimo sulle macchie di colore | ●●●●● |
+| **Bilaterale** | Rumore leggero, quando serve velocità | ●●●●● |
+| **Non-Local Means** | Trame fini (tessuti, foglie) | ●●●○○ |
+| **DRUNet (IA)** | Massima qualità sui RAW ad ISO alti | ●●○○○ con GPU, ●○○○○ senza |
+| **SCUNet (IA)** | JPG e foto da smartphone | ●●○○○ con GPU, ●○○○○ senza |
+
+I modelli neurali non sono inclusi: l'app li scarica la prima volta dalle pubblicazioni ufficiali
+(DRUNet 125 MB, SCUNet 69 MB), li verifica e da quel momento funziona offline.
+Misure di qualità e dettagli tecnici: **[come funziona](docs/come-funziona.md)**.
+
+## Documentazione
+
+| Documento | Contenuto |
 |---|---|
-| **Wavelet** | Veloce, ottimo sul colore; predefinito |
-| **Non-Local Means** | Preserva bene trame e bordi; più lento |
-| **Bilaterale** | Molto veloce; a forze alte effetto «acquerello» |
-| **DRUNet** (neurale) | Riceve il livello di rumore misurato: in genere la qualità più alta |
-| **SCUNet** (neurale) | Addestrata su rumore reale: ottima sui JPG; stima il rumore da sola |
+| [Guida all'uso](docs/guida.md) | Tutti i comandi dell'interfaccia, con schermate e scorciatoie |
+| [Come funziona](docs/come-funziona.md) | Livelli di denoise, misura del rumore, algoritmi, reti neurali, qualità misurata, limiti |
+| [Riga di comando](docs/riga-di-comando.md) | `denoiser-cli`: elaborazione in serie, preset, modelli |
+| [Sviluppo](docs/sviluppo.md) | Ambiente, test, struttura del codice, build e pubblicazione di una versione |
+| [Novità](CHANGELOG.md) | Cronologia delle versioni |
+| [Licenze di terze parti](THIRD-PARTY-NOTICES.md) | Librerie, modelli e strumenti inclusi o scaricati |
 
-`denoiser-cli algoritmi` elenca tutti i parametri.
+## Licenza
 
-Risultati indicativi sui test sintetici (PSNR, più alto è meglio):
-
-| | Rumoroso | Wavelet | DRUNet | SCUNet |
-|---|---|---|---|---|
-| RAW, livello 3 | 27,9 dB | 31,1 | **32,6** | 30,9 |
-| RAW, livello 2 | 27,9 dB | 29,8 | 31,0 | **32,6** |
-| JPG | 26,3 dB | 33,3 | **36,2** | 35,7 |
-
-### Modelli neurali (in locale)
-
-I modelli **non sono inclusi** nell'applicazione: alla prima scelta di DRUNet o SCUNet l'app
-propone di scaricarli dalle release ufficiali di [KAIR](https://github.com/cszn/KAIR)
-(DRUNet 125 MB, licenza MIT; SCUNet 69 MB, licenza Apache 2.0). Il file viene verificato con
-un'impronta SHA-256 e convertito in ONNX sul tuo computer; da quel momento tutto funziona offline.
-
-- I file `.pth` vengono letti senza PyTorch e senza eseguire codice contenuto nel file.
-- L'elaborazione usa la **GPU** tramite DirectML (qualsiasi scheda video su Windows) e ripiega
-  automaticamente sulla CPU se la GPU non è utilizzabile. Senza GPU le reti sono lente
-  (minuti per una foto da 24 MP).
-- Da riga di comando: `denoiser-cli modelli elenca` e `denoiser-cli modelli scarica`.
-- I modelli si trovano in `%LOCALAPPDATA%\Denoiser\modelli` (o in `DENOISER_MODELS_DIR`).
-
-## Interfaccia grafica
-
-Tema scuro, tutto in italiano. Flusso in tre passi: **apri → guarda al 100% → esporta**.
-
-Le scorciatoie sono sempre in vista: ogni pulsante della barra in alto mostra il proprio tasto
-(es. *Apri file…* `Ctrl+O`), una striscia sotto la foto ricorda i comandi della vista
-(disattivabile da *Visualizza → Mostra i tasti sotto la foto*) e **F1** apre la guida con l'elenco completo.
-
-- **Apri** (Ctrl+O), trascina una foto nella finestra o scegli tra i **file recenti** nella
-  pagina iniziale. Trascinando più foto o una cartella si apre *Elabora più file*.
-- La foto si apre **al 100% al centro**: il rumore si giudica a pixel reali. La **linea** separa
-  *prima* (sinistra) e *dopo* (destra); trascina la maniglia, sposta la foto, rotellina per lo zoom,
-  doppio clic per scegliere il punto da controllare.
-- **Confronto** (tasto `\`): tendina → solo dopo → solo prima → **rumore tolto** (la differenza
-  amplificata ×4: se vedi contorni, la forza è eccessiva). Tieni premuto **Spazio** per vedere l'originale.
-- L'anteprima mostra quando è *da aggiornare* o *in calcolo*, e quanta parte del rumore stimato è stata tolta.
-- Pannello a destra: **Foto** (giudizio sul rumore misurato), **Punto di partenza** (preset, con
-  «(modificato)» quando li cambi; *Salva come preset…* sceglie le sezioni da salvare), **Riduzione del
-  rumore** (Grana, Macchie di colore, Recupero dettaglio, pixel caldi, metodo e regolazioni avanzate),
-  **Sviluppo RAW**, **Salvataggio** (con l'anteprima del percorso finale). La spiegazione del controllo
-  sotto il mouse compare in fondo al pannello; doppio clic su un cursore = valore consigliato.
-- I modelli neurali si scaricano dal pannello o facendo clic sull'avviso nell'anteprima, con avanzamento.
-- **Esporta** (Ctrl+E) o **Esporta come…** (Ctrl+Maiusc+E). Al termine un avviso offre *Apri cartella*,
-  *Mostra il file*, *Apri la foto*. Le operazioni lunghe si interrompono con **Esc** o *Interrompi*:
-  nessun file resta scritto a metà.
-- **Elabora più file…** (Ctrl+B): file e cartelle (anche sottocartelle), preset, cosa fare se il file
-  esiste, avanzamento con tempo stimato, interruzione e riepilogo degli errori.
-- **Annulla / Ripeti** (Ctrl+Z / Ctrl+Y) per tutte le regolazioni; *Valori consigliati* ripristina il denoise.
-- **Aiuto → Guida rapida** (F1) riassume l'uso e tutte le scorciatoie.
-
-| Scorciatoia | Azione |
-|---|---|
-| Ctrl+O | Apri |
-| Ctrl+E / Ctrl+Maiusc+E | Esporta / Esporta come |
-| Ctrl+B | Elabora più file |
-| Ctrl+Z / Ctrl+Y | Annulla / Ripeti |
-| Ctrl+0 / Ctrl+1 / Ctrl+2 | Adatta / 100% / 200% |
-| Ctrl + / Ctrl − | Zoom |
-| Frecce (+ Maiusc) | Sposta la vista |
-| Spazio (tenuto) | Mostra l'originale |
-| `\` | Cambia confronto |
-| Esc | Interrompe l'operazione in corso |
-| F1 | Guida rapida |
-
-## Formati di uscita e metadati
-
-- **TIFF** (8/16 bit), **PNG** (8/16 bit), **JPEG**.
-- **DNG** (solo da RAW), per continuare a lavorare in Lightroom, darktable e simili:
-  - al livello 3 contiene i **dati del sensore già ripuliti**: il programma di fotoritocco
-    esegue la propria demosaicizzazione e restano liberi bilanciamento del bianco, esposizione
-    e profili colore, come con il RAW originale;
-  - al livello 2 (o con sensori non Bayer) è un DNG lineare, con il bilanciamento del bianco
-    già applicato.
-- I **metadati** dell'originale (data, fotocamera, obiettivo, esposizione, GPS, parole chiave…)
-  vengono copiati con [ExifTool](https://exiftool.org), incluso nel pacchetto per Windows.
-  Le impostazioni di denoise usate vengono registrate nella descrizione del file.
-- Il **profilo colore** (ICC) dell'originale viene conservato (es. Display P3 degli smartphone,
-  Adobe RGB); le uscite da RAW dichiarano sRGB. Il DNG ripulito mantiene l'esposizione di base
-  del DNG d'origine.
-- Il salvataggio passa da un file temporaneo: un'esportazione interrotta non lascia file a metà,
-  e il file d'origine non viene mai sovrascritto.
-- Gli errori imprevisti dell'interfaccia vengono mostrati e registrati in
-  `%LOCALAPPDATA%\Denoiser\errori.log`.
-
-## Riga di comando
-
-```
-denoiser-cli elabora FOTO_O_CARTELLE... [opzioni]
-denoiser-cli analizza FOTO          # informazioni e rumore stimato
-denoiser-cli algoritmi              # algoritmi e parametri
-denoiser-cli modelli elenca | scarica [drunet|scunet|tutti]
-denoiser-cli preset elenca | salva NOME [opzioni]
-```
-
-Esempi:
-
-```
-denoiser-cli elabora D:\Foto\Serata --preset "Forte (ISO alti)" --formato tiff
-denoiser-cli elabora DSC_0001.NEF --algoritmo nlm --luminanza 0.8 --colore 1.2 --param search_window=15
-denoiser-cli elabora D:\Foto --ricorsivo --formato jpeg --qualita 92 --nome "{nome}_{metodo}_{iso}"
-denoiser-cli elabora DSC_0001.NEF --algoritmo drunet --formato dng
-```
-
-Nel nome del file di uscita si possono usare `{nome}`, `{metodo}`, `{iso}`, `{data}`.
-La cartella di uscita predefinita è `denoised` accanto alla foto originale; i file esistenti
-non vengono sovrascritti (si aggiunge `_1`, `_2`, …) a meno di `--sovrascrivi`.
-
-## Fotocamere non supportate da LibRaw
-
-Le fotocamere appena uscite (o formati come i NEF Nikon «alta efficienza») possono non essere
-ancora supportate da LibRaw. In questo caso, se è installato
-[Adobe DNG Converter](https://helpx.adobe.com/camera-raw/using/adobe-dng-converter.html)
-(gratuito), l'app converte automaticamente il file in DNG e lo apre. Il percorso si può
-indicare nel pannello *Sviluppo RAW* o con `--dng-converter`.
-
-Nota: i NEF «alta efficienza» sono compressi con perdita; per la massima qualità del denoise
-conviene scattare con compressione «senza perdita».
-
-## Limiti attuali
-
-- Si assume che JPG/PNG/TIFF siano in sRGB (i profili colore incorporati non vengono convertiti).
-- Con la wavelet l'anteprima di una zona può differire leggermente dall'esportazione
-  dell'intera foto (la soglia si adatta al contenuto).
-- Il DNG lineare (livello 2) ha il bilanciamento del bianco già applicato.
-- Le reti neurali sono addestrate su immagini sRGB: sui dati del sensore (livello 3) funzionano
-  molto bene nei test sintetici, ma vanno verificate su foto reali.
-- Senza ExifTool vengono copiati solo i metadati essenziali dei JPG.
-
-## Sviluppo
-
-```
-python -m venv .venv
-.venv\Scripts\activate            # Windows (su Linux/macOS: source .venv/bin/activate)
-pip install -e ".[gui,dev]"
-pytest
-denoiser-gui                      # interfaccia
-denoiser analizza foto.nef        # riga di comando
-pyinstaller packaging/denoiser.spec --noconfirm   # eseguibile (richiede ".[build]")
-```
-
-I test usano immagini sintetiche, compresi DNG Bayer generati con rumore noto
-(`tests/synthetic.py`), così da misurare oggettivamente il miglioramento (PSNR).
-Le reti ricostruite in ONNX vengono confrontate con implementazioni di riferimento numpy;
-con `DENOISER_TEST_WEIGHTS=<cartella con i .pth>` si eseguono anche i test con i pesi reali.
-
-## Prossimi passi
-
-- Collaudo e taratura sui NEF reali della Nikon Z5 II e sui JPG reali.
+Progetto per uso personale; tutti i diritti riservati. I componenti di terze parti inclusi nel
+pacchetto, e i modelli neurali scaricati al primo uso, restano soggetti alle rispettive licenze:
+vedi [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

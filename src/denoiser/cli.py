@@ -76,12 +76,18 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
         if key not in known:
             raise SystemExit(f"Parametro «{key}» non valido per {d.algorithm}. Validi: {', '.join(sorted(known))}")
         d.params[key] = value
-    d.params = algorithm.resolve(d.params)
+    resolved = algorithm.resolve(d.params)
+    for key, value in args.param:
+        if str(resolved[key]) != str(value):
+            print(f"Avviso: {key}={value} non ammesso, si usa {resolved[key]}", file=sys.stderr)
+    d.params = resolved
 
     if args.bilanciamento:
         s.develop.wb_mode = args.bilanciamento
     if args.moltiplicatori:
         s.develop.wb_custom = tuple(args.moltiplicatori)
+        if not args.bilanciamento:
+            s.develop.wb_mode = "custom"  # indicare i moltiplicatori vale come scelta del bilanciamento
     if args.demosaic:
         s.develop.demosaic = args.demosaic
     if args.livello:
@@ -96,7 +102,7 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
         o.format = args.formato
     if args.bit:
         o.bit_depth = args.bit
-    if args.qualita:
+    if args.qualita is not None:
         o.jpeg_quality = max(1, min(100, args.qualita))
     if args.cartella is not None:
         o.folder = args.cartella

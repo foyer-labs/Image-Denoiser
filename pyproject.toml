@@ -4,10 +4,26 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "denoiser"
-version = "0.1.0"
+version = "0.9.0"
 description = "Riduzione del rumore per foto RAW, JPG e PNG, interamente in locale"
 readme = "README.md"
 requires-python = ">=3.11"
+keywords = ["denoise", "riduzione del rumore", "raw", "dng", "nef", "fotografia", "wavelet", "drunet", "scunet"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Win32 (MS Windows)",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "Natural Language :: Italian",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
 dependencies = [
     "numpy>=1.26",
     "rawpy>=0.21",
@@ -21,6 +37,12 @@ dependencies = [
     # Su Windows DirectML usa qualsiasi GPU (NVIDIA, AMD, Intel) senza installare CUDA.
     "onnxruntime-directml>=1.17; sys_platform == 'win32'",
 ]
+
+[project.urls]
+Homepage = "https://github.com/foyer-labs/Image-Denoiser"
+Documentation = "https://github.com/foyer-labs/Image-Denoiser/blob/HEAD/docs/guida.md"
+Changelog = "https://github.com/foyer-labs/Image-Denoiser/blob/HEAD/CHANGELOG.md"
+Issues = "https://github.com/foyer-labs/Image-Denoiser/issues"
 
 [project.optional-dependencies]
 gui = ["PySide6-Essentials>=6.6"]

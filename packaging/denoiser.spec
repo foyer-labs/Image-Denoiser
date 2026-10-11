@@ -3,6 +3,8 @@
 # Produce dist/Denoiser/ con Denoiser.exe (interfaccia) e denoiser-cli.exe (riga di comando).
 
 import os
+import re
+import sys
 
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
@@ -36,6 +38,35 @@ def analysis(script):
     )
 
 
+# Versione letta dal pacchetto: compare nelle proprietà del file in Esplora risorse.
+with open(os.path.join(SRC, "denoiser", "__init__.py"), encoding="utf-8") as f:
+    VERSION = re.search(r'__version__ = "([^"]+)"', f.read()).group(1)
+_numbers = tuple(int(x) for x in (re.findall(r"\d+", VERSION) + ["0"] * 4)[:4])
+ICON = os.path.join(SPECPATH, "denoiser.ico")
+
+
+def version_info(description):
+    if sys.platform != "win32":
+        return None  # le informazioni di versione esistono solo negli eseguibili Windows
+    from PyInstaller.utils.win32.versioninfo import (
+        FixedFileInfo, StringFileInfo, StringStruct, StringTable, VarFileInfo, VarStruct, VSVersionInfo,
+    )
+
+    return VSVersionInfo(
+        ffi=FixedFileInfo(filevers=_numbers, prodvers=_numbers),
+        kids=[
+            StringFileInfo([StringTable("041004B0", [
+                StringStruct("FileDescription", description),
+                StringStruct("FileVersion", VERSION),
+                StringStruct("ProductName", "Denoiser"),
+                StringStruct("ProductVersion", VERSION),
+                StringStruct("LegalCopyright", "Uso personale"),
+            ])]),
+            VarFileInfo([VarStruct("Translation", [0x0410, 1200])]),
+        ],
+    )
+
+
 gui = analysis(os.path.join(SPECPATH, "denoiser_gui.py"))
 cli = analysis(os.path.join(SPECPATH, "denoiser_cli.py"))
 
@@ -47,6 +78,8 @@ gui_exe = EXE(
     name="Denoiser",
     console=False,
     upx=False,
+    icon=ICON,
+    version=version_info("Denoiser - riduzione del rumore delle foto"),
 )
 cli_exe = EXE(
     PYZ(cli.pure),
@@ -56,6 +89,8 @@ cli_exe = EXE(
     name="denoiser-cli",
     console=True,
     upx=False,
+    icon=ICON,
+    version=version_info("Denoiser - riga di comando"),
 )
 coll = COLLECT(
     gui_exe,

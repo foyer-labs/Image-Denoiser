@@ -1,0 +1,13 @@
+# Fine riga normalizzata; gli script di Windows restano con CRLF.
+* text=auto
+*.bat text eol=crlf
+
+# File binari
+*.png binary
+*.jpg binary
+*.ico binary
+*.dng binary
+
+# Statistiche dei linguaggi su GitHub: la documentazione non conta come codice.
+docs/** linguist-documentation
+*.spec linguist-language=Python

@@ -115,3 +115,50 @@ jobs:
           name: Denoiser-windows
           path: Denoiser-windows.zip
           retention-days: 30
+
+  # Pubblicazione di una versione: parte quando si invia un tag «vX.Y.Z» (vedi docs/sviluppo.md).
+  release:
+    needs: build-windows
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Denoiser-windows
+      - name: Controlla la versione e prepara le note di rilascio
+        id: notes
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          tag = os.environ["GITHUB_REF_NAME"]
+          version = tag.removeprefix("v")
+          code = re.search(r'__version__ = "([^"]+)"', open("src/denoiser/__init__.py", encoding="utf-8").read()).group(1)
+          if code != version:
+              sys.exit(f"Il tag {tag} non corrisponde alla versione del codice ({code})")
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          m = re.search(rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|^\[[^\]]+\]: |\Z)", text, re.S | re.M)
+          if not m:
+              sys.exit(f"Nessuna sezione [{version}] in CHANGELOG.md")
+          body = m.group(1).strip()
+          body += ("\n\n---\n**Installazione:** scarica `Denoiser-windows-" + version + ".zip`, estrailo e avvia "
+                   "`Denoiser\\Denoiser.exe`. Guida completa nel [README](../../blob/" + tag + "/README.md).")
+          open("note.md", "w", encoding="utf-8").write(body)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"version={version}\n")
+          PY
+      - name: Rinomina il pacchetto
+        run: |
+          mv Denoiser-windows*.zip "Denoiser-windows-${{ steps.notes.outputs.version }}.zip"
+          sha256sum "Denoiser-windows-${{ steps.notes.outputs.version }}.zip" > "Denoiser-windows-${{ steps.notes.outputs.version }}.zip.sha256"
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Denoiser ${{ steps.notes.outputs.version }}
+          body_path: note.md
+          # Le versioni 0.x sono anteprime: diventeranno definitive dopo il collaudo sulle foto reali.
+          prerelease: ${{ startsWith(github.ref_name, 'v0.') || contains(github.ref_name, '-') }}
+          files: |
+            Denoiser-windows-${{ steps.notes.outputs.version }}.zip
+            Denoiser-windows-${{ steps.notes.outputs.version }}.zip.sha256
