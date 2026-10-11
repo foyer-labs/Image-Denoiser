@@ -20,21 +20,6 @@ from .style import apply_theme
 # la comparsa della schermata di avvio, che ne mostra l'avanzamento.
 
 
-def _pyinstaller_splash(text: str | None) -> None:
-    """Aggiorna (testo) o chiude (None) l'immagine di avvio dell'eseguibile, se presente."""
-    try:
-        import pyi_splash  # esiste solo nell'eseguibile creato con PyInstaller
-    except ImportError:
-        return
-    try:
-        if text is None:
-            pyi_splash.close()
-        else:
-            pyi_splash.update_text(text)
-    except Exception:
-        pass
-
-
 def log_path() -> Path:
     base = os.environ.get("LOCALAPPDATA") or str(Path.home())
     return Path(base) / "Denoiser" / "errori.log"
@@ -85,7 +70,6 @@ _CRASH_LOG = None  # file aperto per tutta la vita dell'app (faulthandler ne ha 
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv if argv is None else argv
-    _pyinstaller_splash("Avvio…")
     _install_excepthook()
     app = QApplication(argv)
     app.setApplicationName("Denoiser")
@@ -95,7 +79,6 @@ def main(argv: list[str] | None = None) -> int:
     splash = StartupSplash(__version__)
     splash.show()
     app.processEvents()
-    _pyinstaller_splash(None)  # la schermata Qt ha preso il posto dell'immagine iniziale
     splash.load_modules()
 
     from ..io.formats import is_supported

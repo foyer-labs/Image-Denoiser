@@ -1,9 +1,8 @@
 """Schermata di avvio con barra di avanzamento.
 
 All'avvio l'app carica librerie pesanti (calcolo numerico, immagini, RAW, reti neurali): senza un
-segnale immediato l'utente non capisce se il doppio clic ha funzionato. Nell'eseguibile per Windows
-la stessa immagine (``packaging/splash.png``, generata da :func:`render_splash`) compare subito,
-prima ancora che parta Python; poi questa schermata Qt la sostituisce e mostra l'avanzamento reale.
+segnale immediato l'utente non capisce se il doppio clic ha funzionato. La schermata compare appena
+Python e Qt sono pronti e mostra l'avanzamento reale del caricamento.
 
 Questo modulo usa solo Qt: va importato prima delle librerie pesanti.
 """
@@ -19,7 +18,7 @@ from PySide6.QtWidgets import QApplication, QSplashScreen
 from .style import ACCENT, app_icon
 
 WIDTH, HEIGHT = 520, 300
-#: Posizione del testo di stato (in basso a sinistra), condivisa con lo splash di PyInstaller.
+#: Posizione del testo di stato (in basso a sinistra).
 STATUS_X, STATUS_BASELINE = 32, 247
 
 #: Fasi di caricamento: (modulo da importare, testo per l'utente, peso sul tempo totale).
@@ -38,12 +37,9 @@ WINDOW_WEIGHT = 20
 
 
 def render_splash(
-    fraction: float | None, status: str = "", version: str = "", dpr: float = 1.0, rounded: bool = True
+    fraction: float | None, status: str = "", version: str = "", dpr: float = 1.0
 ) -> QPixmap:
-    """Disegna la schermata. ``fraction`` None: senza barra piena né percentuale (immagine statica).
-
-    ``rounded`` False: angoli squadrati e opachi, per lo splash nativo dell'eseguibile (senza trasparenza).
-    """
+    """Disegna la schermata. ``fraction`` None: senza barra piena né percentuale."""
     pm = QPixmap(round(WIDTH * dpr), round(HEIGHT * dpr))
     pm.setDevicePixelRatio(dpr)
     pm.fill(Qt.GlobalColor.transparent)
@@ -53,7 +49,7 @@ def render_splash(
 
     card = QRectF(0.5, 0.5, WIDTH - 1, HEIGHT - 1)
     path = QPainterPath()
-    path.addRoundedRect(card, 14 if rounded else 0, 14 if rounded else 0)
+    path.addRoundedRect(card, 14, 14)
     p.fillPath(path, QColor("#1f2329"))
     p.setPen(QColor("#3a4049"))
     p.drawPath(path)

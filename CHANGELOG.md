@@ -5,6 +5,13 @@ Tutte le modifiche rilevanti, dalla più recente. Formato ispirato a
 
 ## [Non rilasciato]
 
+## [0.10.1] - 2026-10-11
+
+### Corretto
+
+- All'avvio di `Denoiser.exe` non compare più una piccola finestra grigia vuota prima della schermata
+  di avvio: ora c'è solo la schermata con la barra di avanzamento.
+
 ## [0.10.0] - 2026-10-11
 
 ### Aggiunto
@@ -96,7 +103,8 @@ Codice distribuito con licenza MIT.
 - Correzioni di memoria, concorrenza, cache e gestione degli errori; registro degli errori in
   `%LOCALAPPDATA%\Denoiser\errori.log`.
 
-[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.10.0...HEAD
+[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.3...v0.10.0
 [0.9.3]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.9.1...v0.9.2
