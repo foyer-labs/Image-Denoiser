@@ -235,8 +235,14 @@ Senza una scheda video compatibile girano sul processore. In basso a destra, ●
 video è in uso. Wavelet e NLM danno ottimi risultati in pochi secondi.
 
 **Un RAW non si apre.**
-Installa Adobe DNG Converter (gratuito): l'app lo userà da sola. Per i NEF Nikon conviene scattare
-con compressione «senza perdita» invece di «alta efficienza».
+Installa [Adobe DNG Converter](https://helpx.adobe.com/camera-raw/using/adobe-dng-converter.html)
+(gratuito): l'app lo userà da sola, convertendo il file al volo senza toccare l'originale (i DNG
+convertiti restano in una cache, così la stessa foto si riapre subito).
+
+I **NEF Nikon «alta efficienza»** (HE e HE\*, per esempio di Z 5II, Z 6III, Z 8, Z 9 e Z f) usano una
+compressione brevettata (TicoRAW) che oggi nessun programma libero sa decodificare, né LibRaw né
+darktable o RawTherapee: serve Adobe DNG Converter. In alternativa, imposta la fotocamera su NEF con
+compressione «senza perdita»: i file sono più grandi ma si aprono direttamente.
 
 **Dove finiscono i file?**
 Nella sottocartella `denoised` accanto alla foto originale, salvo diversa scelta in *Salvataggio*.

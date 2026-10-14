@@ -70,7 +70,9 @@ def convert_to_dng(
     # un DNG troncato (timeout, interruzione) non deve essere riusato per sempre.
     work = Path(tempfile.mkdtemp(prefix="conv-", dir=root))
     try:
-        cmd = [str(converter), "-c", "-p0", "-d", str(work), str(src.resolve())]
+        # Compatibilità DNG 1.4: dati del sensore con compressione JPEG senza perdita, che LibRaw legge
+        # sempre (le versioni recenti potrebbero altrimenti usare JPEG XL).
+        cmd = [str(converter), "-c", "-p0", "-dng1.4", "-d", str(work), str(src.resolve())]
         kwargs = {}
         if sys.platform == "win32":
             kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW

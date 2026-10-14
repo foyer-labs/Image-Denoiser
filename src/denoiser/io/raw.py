@@ -69,7 +69,15 @@ def decode_raw(path: Path, develop: DevelopSettings | None = None, measure_noise
     with raw:
         # Va letto prima dello sviluppo: con user_flip=0 LibRaw lo azzera.
         flip = int(raw.sizes.flip)
-        if not is_dng and not _has_color_matrix(raw):
+        try:
+            has_matrix = is_dng or _has_color_matrix(raw)  # legge (e decodifica) i dati del sensore
+        except _UNSUPPORTED_ERRORS as exc:
+            # Il file è riconosciuto ma i dati non si decodificano: compressione sconosciuta a LibRaw
+            # (es. NEF Nikon «alta efficienza») oppure file danneggiato.
+            raise RawNotSupportedError(
+                f"LibRaw non sa decodificare i dati del sensore di questo file ({exc.__class__.__name__})."
+            ) from exc
+        if not has_matrix:
             raise RawNotSupportedError(
                 "LibRaw non conosce i colori di questa fotocamera (matrice colore assente): "
                 "probabilmente è un modello troppo recente."

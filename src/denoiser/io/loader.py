@@ -22,8 +22,20 @@ from .raster import load_jpeg, load_png_or_tiff
 from .raw import RawDamagedError, RawNotSupportedError, decode_raw
 
 
+#: Pagina ufficiale per scaricare Adobe DNG Converter (gratuito).
+ADOBE_DNG_CONVERTER_URL = "https://helpx.adobe.com/camera-raw/using/adobe-dng-converter.html"
+
+
 class UnsupportedImageError(Exception):
     """Il file non può essere aperto; il messaggio è pensato per l'utente."""
+
+
+def is_nikon_high_efficiency(path: Path) -> bool:
+    """True per i NEF compressi «High Efficiency» (HE o HE*, basati su TicoRAW), letti con ExifTool."""
+    from .metadata import read_tag
+
+    value = read_tag(path, "NEFCompression") or ""
+    return "high efficiency" in value.lower()
 
 
 def load_image(
@@ -71,12 +83,26 @@ def _load_raw(
     if path.suffix.lower() == ".dng":
         raise UnsupportedImageError(f"Impossibile leggere il DNG {path.name}: {reason}")
 
+    high_efficiency = path.suffix.lower() == ".nef" and is_nikon_high_efficiency(path)
+    if high_efficiency:
+        reason = ("è un NEF Nikon «alta efficienza» (HE/HE*), compresso con una tecnica brevettata "
+                  "(TicoRAW) che nessuna libreria libera sa ancora leggere")
     converter = dng_converter.find_converter(converter_path) if use_dng_converter else None
     if converter is None:
+        if high_efficiency:
+            raise UnsupportedImageError(
+                f"{path.name} {reason}.\n\n"
+                "Per aprirlo installa Adobe DNG Converter, gratuito per Windows e macOS "
+                f"({ADOBE_DNG_CONVERTER_URL}): l'app lo userà da sola, convertendo il file al volo "
+                "senza toccare l'originale.\n\n"
+                "Per le prossime foto puoi anche impostare la fotocamera su NEF con compressione "
+                "«senza perdita» invece di «alta efficienza»: i file sono più grandi ma si aprono direttamente."
+            )
         raise UnsupportedImageError(
             f"{path.name}: {reason}\n\n"
             "Soluzioni possibili:\n"
-            "• installa Adobe DNG Converter (gratuito): l'app lo userà automaticamente;\n"
+            f"• installa Adobe DNG Converter, gratuito ({ADOBE_DNG_CONVERTER_URL}): l'app lo userà "
+            "automaticamente;\n"
             "• oppure converti il file in DNG e apri il DNG;\n"
             "• per i NEF Nikon, imposta la fotocamera su compressione «senza perdita» "
             "invece di «alta efficienza»."
@@ -93,7 +119,10 @@ def _load_raw(
     # Il DNG ha il suo nome nella cache: per i file di uscita conta l'originale.
     image.meta.source = path
     image.meta.kind = "dng-convertito"
-    image.meta.notes.append(f"Letto tramite Adobe DNG Converter ({reason})")
+    image.meta.notes.append(
+        "Letto tramite Adobe DNG Converter (NEF «alta efficienza»)" if high_efficiency
+        else f"Letto tramite Adobe DNG Converter ({reason})"
+    )
     if not image.meta.camera:
         info = read_basic_exif(path)
         image.meta.camera, image.meta.iso, image.meta.date = info.camera, info.iso, info.date

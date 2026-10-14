@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 from PIL import Image
@@ -161,3 +163,96 @@ def test_metadata_copied_with_exiftool(tmp_path):
         out = subprocess.run(["exiftool", "-s", "-Model", "-ISO", "-Title", "-GPSLatitude", "-Software",
                               str(result.output)], capture_output=True, text=True).stdout
         assert "Z 5_2" in out and "6400" in out and "Prova" in out and "45" in out and "Denoiser" in out, out
+
+
+# ----------------------------------------------------------------------------- NEF «alta efficienza»
+
+
+def test_dati_non_decodificabili_diventano_non_supportati(tmp_path, monkeypatch):
+    """LibRaw apre i NEF «alta efficienza» ma fallisce leggendo i dati: va proposta la conversione,
+    non un errore generico."""
+    import rawpy
+
+    from denoiser.io import raw as raw_module
+
+    class Unreadable:
+        sizes = type("S", (), {"flip": 0})()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        @property
+        def rgb_xyz_matrix(self):
+            raise rawpy.LibRawDataError("Data error or unsupported file format")
+
+    src = tmp_path / "DSC_0035.NEF"
+    src.write_bytes(b"x" * 2048)
+    monkeypatch.setattr(raw_module.rawpy, "imread", lambda _f: Unreadable())
+    with pytest.raises(raw_module.RawNotSupportedError, match="decodificare"):
+        raw_module.decode_raw(src)
+
+
+def _fake_unreadable_nef(tmp_path, monkeypatch):
+    from denoiser.io import loader
+
+    src = tmp_path / "DSC_0035.NEF"
+    src.write_bytes(b"x" * 2048)
+    real_decode = loader.decode_raw
+
+    def decode(path, develop=None):
+        if path.suffix.lower() == ".nef":
+            raise loader.RawNotSupportedError("LibRaw non sa decodificare i dati del sensore di questo file.")
+        return real_decode(path, develop)
+
+    monkeypatch.setattr(loader, "decode_raw", decode)
+    monkeypatch.setattr(loader, "is_nikon_high_efficiency", lambda _p: True)
+    return src
+
+
+def test_nef_alta_efficienza_senza_convertitore_spiega_cosa_fare(tmp_path, monkeypatch):
+    from denoiser.io import loader
+
+    src = _fake_unreadable_nef(tmp_path, monkeypatch)
+    monkeypatch.setattr(loader.dng_converter, "find_converter", lambda _p=None: None)
+    with pytest.raises(UnsupportedImageError) as info:
+        load_image(src)
+    text = str(info.value)
+    assert "alta efficienza" in text and loader.ADOBE_DNG_CONVERTER_URL in text and "senza perdita" in text
+
+
+def test_nef_alta_efficienza_passa_da_dng_converter(tmp_path, monkeypatch):
+    from denoiser.io import loader
+    from synthetic import clean_linear, write_bayer_dng
+
+    src = _fake_unreadable_nef(tmp_path, monkeypatch)
+    converted = write_bayer_dng(tmp_path / "convertito", clean_linear(size=128))
+    monkeypatch.setattr(loader.dng_converter, "find_converter", lambda _p=None: tmp_path / "Adobe DNG Converter.exe")
+    monkeypatch.setattr(loader.dng_converter, "convert_to_dng", lambda _src, _conv: converted)
+    image = load_image(src)
+    assert image.meta.source == src and image.meta.kind == "dng-convertito"
+    assert any("alta efficienza" in note for note in image.meta.notes)
+    assert image.raw_source is not None  # DNG Bayer: anche il livello 3 è disponibile
+
+
+def test_dng_converter_chiede_dng_leggibili_da_libraw(tmp_path, monkeypatch):
+    import subprocess
+
+    from denoiser.io import dng_converter
+
+    calls = []
+
+    def fake_run(cmd, **_kwargs):
+        calls.append(cmd)
+        out = Path(cmd[cmd.index("-d") + 1])
+        (out / "DSC_0035.dng").write_bytes(b"dng")
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    src = tmp_path / "DSC_0035.NEF"
+    src.write_bytes(b"nef")
+    monkeypatch.setattr(dng_converter.subprocess, "run", fake_run)
+    result = dng_converter.convert_to_dng(src, tmp_path / "conv.exe", cache_dir=tmp_path / "cache")
+    assert result.name == "DSC_0035.dng" and result.read_bytes() == b"dng"
+    assert "-dng1.4" in calls[0] and "-c" in calls[0]

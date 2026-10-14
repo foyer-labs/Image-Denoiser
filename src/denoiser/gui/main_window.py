@@ -128,6 +128,15 @@ def finish_preview(image: ImageData, analysis: Analysis, settings: Settings, lin
     return {"linear": linear, "rgb": rgb, "diff": diff, "stats": stats}
 
 
+def _linkify(text: str) -> str:
+    """Testo semplice -> HTML con a capo e indirizzi web cliccabili."""
+    import html
+    import re
+
+    escaped = html.escape(text).replace("\n", "<br>")
+    return re.sub(r"(https?://[^\s<)]+)", r"<a href='\1'>\1</a>", escaped)
+
+
 def humanize_error(message: str) -> tuple[str, str]:
     """Trasforma un errore tecnico in (titolo, spiegazione con cosa fare)."""
     low = message.lower()
@@ -1416,7 +1425,9 @@ class MainWindow(QMainWindow):
         box.setIcon(QMessageBox.Icon.Warning)
         box.setWindowTitle(title)
         box.setText(f"<b>{human_title if human_title != 'Operazione non riuscita' else title}</b>")
-        box.setInformativeText(text)
+        box.setInformativeText(_linkify(text))
+        for label in box.findChildren(QLabel):  # i link (es. download di Adobe DNG Converter) si aprono
+            label.setOpenExternalLinks(True)
         if detail:
             box.setDetailedText(detail)
         box.exec()

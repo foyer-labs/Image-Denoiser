@@ -5,6 +5,18 @@ Tutte le modifiche rilevanti, dalla più recente. Formato ispirato a
 
 ## [Non rilasciato]
 
+## [0.11.2] - 2026-10-14
+
+### Corretto
+
+- I NEF Nikon «alta efficienza» (HE/HE*, per esempio della Z 5II) davano un errore generico: LibRaw
+  riconosce il file ma non sa decodificarne i dati, e l'errore emergeva in un punto che saltava la
+  conversione. Ora, con Adobe DNG Converter installato, vengono convertiti e aperti da soli (anche
+  al livello 3, sui dati del sensore). Senza il convertitore compare un messaggio che spiega il
+  motivo, con il link per scaricarlo.
+- Adobe DNG Converter produce DNG compatibili con LibRaw (`-dng1.4`), anche nelle versioni recenti.
+- I link nei messaggi d'errore si possono cliccare.
+
 ## [0.11.1] - 2026-10-11
 
 ### Corretto
@@ -133,7 +145,8 @@ Codice distribuito con licenza MIT.
 - Correzioni di memoria, concorrenza, cache e gestione degli errori; registro degli errori in
   `%LOCALAPPDATA%\Denoiser\errori.log`.
 
-[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.1...HEAD
+[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.2...HEAD
+[0.11.2]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.10.0...v0.10.1

@@ -39,6 +39,26 @@ def find_exiftool(explicit: str | os.PathLike | None = None) -> Path | None:
     return Path(found) if found else None
 
 
+def read_tag(path: Path, tag: str, exiftool: Path | None = None) -> str | None:
+    """Valore testuale di un tag (es. "NEFCompression"), oppure None se ExifTool manca o il tag non c'è."""
+    exiftool = exiftool or find_exiftool()
+    if exiftool is None:
+        return None
+    kwargs = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    args = ["-charset", "filename=utf8", "-s3", f"-{tag}", str(path)]
+    try:
+        result = subprocess.run(
+            [str(exiftool), "-@", "-"], input=("\n".join(args) + "\n").encode("utf-8"),
+            capture_output=True, timeout=30, **kwargs
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    value = result.stdout.decode("utf-8", "replace").strip()
+    return value or None
+
+
 def copy_metadata(source: Path, target: Path, exiftool: Path | None = None) -> str | None:
     """Copia i metadati di ``source`` in ``target``. Restituisce un messaggio d'errore o None."""
     exiftool = exiftool or find_exiftool()
