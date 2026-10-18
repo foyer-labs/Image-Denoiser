@@ -90,8 +90,11 @@ def main(argv: list[str] | None = None) -> int:
     splash.finish(window)
     # Una foto passata da riga di comando (o trascinata sull'icona dell'eseguibile) viene aperta subito.
     files = [Path(a) for a in argv[1:] if Path(a).is_file() and is_supported(Path(a))]
+    folders = [Path(a) for a in argv[1:] if Path(a).is_dir()]
     if files:
         window.open_path(files[0])
+    elif folders:
+        window.open_folder(folders[0])
     # Usato dalla build automatica per verificare che l'eseguibile si avvii.
     if os.environ.get("DENOISER_SMOKE_TEST"):
         QTimer.singleShot(1500, app.quit)

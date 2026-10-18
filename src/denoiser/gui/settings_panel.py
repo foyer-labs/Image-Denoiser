@@ -72,6 +72,7 @@ class SettingsPanel(QWidget):
     dngConverterChosen = Signal(str)
     dngConverterReset = Signal()
     useDngConverterToggled = Signal(bool)
+    applyRequested = Signal()
 
     def __init__(self, settings: Settings):
         super().__init__()
@@ -242,6 +243,19 @@ class SettingsPanel(QWidget):
         form.addRow(form_label("Quando ridurre (RAW)"), self.raw_stage)
         self.stage_hint = hint_label()
         form.addRow("", self.stage_hint)
+
+        self.apply_button = QPushButton("Applica la riduzione del rumore")
+        self.apply_button.setObjectName("primary")
+        self.apply_button.setMinimumHeight(32)
+        self.apply_button.setToolTip(
+            "Calcola il risultato con il metodo e le regolazioni scelte. Da quel momento l'anteprima si aggiorna "
+            "da sola a ogni modifica; aprendo un'altra foto si riparte dall'originale."
+        )
+        self.apply_button.clicked.connect(self.applyRequested)
+        self.apply_hint = hint_label()
+        form.addRow(self.apply_button)
+        form.addRow(self.apply_hint)
+        self.set_applied(None)
         return box
 
     def _build_raw(self) -> QGroupBox:
@@ -621,6 +635,44 @@ class SettingsPanel(QWidget):
         self.use_dng.blockSignals(False)
         self.dng_label.setText(path if path else "Non installato: serve solo se un RAW non si apre.")
 
+    def set_applied(self, applied: bool | None, shortcut: str = "") -> None:
+        """Stato del pulsante «Applica»: None = nessuna foto, False = da applicare, True = applicata."""
+        key = f"   ({shortcut})" if shortcut else ""
+        if applied:
+            self.apply_button.setText("✓ Applicata: l'anteprima segue le regolazioni")
+            self.apply_button.setObjectName("")
+            self.apply_hint.setText("")
+        else:
+            self.apply_button.setText(f"Applica la riduzione del rumore{key}")
+            self.apply_button.setObjectName("primary" if applied is False else "")
+            self.apply_hint.setText("Scegli il metodo e le regolazioni, poi applica: finché non lo fai vedi la "
+                                    "foto originale." if applied is False else "")
+        self.apply_button.setEnabled(applied is False)
+        self.apply_hint.setVisible(bool(self.apply_hint.text()))
+        self.apply_button.style().unpolish(self.apply_button)
+        self.apply_button.style().polish(self.apply_button)
+
+    def set_algorithm(self, key: str) -> None:
+        """Sceglie il metodo (es. dalla finestra di esportazione), con le sue regolazioni avanzate."""
+        index = self.algorithm.findData(key)
+        if index >= 0 and index != self.algorithm.currentIndex():
+            self.algorithm.setCurrentIndex(index)  # emette denoiseChanged
+
+    def set_output(self, folder: str, fmt: str, bit_depth: int, jpeg_quality: int) -> None:
+        """Cartella e formato scelti nella finestra di esportazione: valgono anche per «Esporta»."""
+        widgets = (self.format, self.bits, self.folder)
+        for w in widgets:
+            w.blockSignals(True)
+        try:
+            set_combo(self.format, fmt)
+            set_combo(self.bits, str(bit_depth))
+            self.quality.set_value(jpeg_quality)
+            self.folder.setText(folder)
+        finally:
+            for w in widgets:
+                w.blockSignals(False)
+        self._on_output()
+
     def set_output_example(self, text: str) -> None:
         self.example.setText(text)
 
@@ -688,7 +740,7 @@ class SettingsPanel(QWidget):
         o.bit_depth = int(self.bits.currentData())
         o.jpeg_quality = int(round(self.quality.value()))
         o.folder = self.folder.text().strip()
-        o.name_template = self.name.text().strip() or "{nome}_dn"
+        o.name_template = self.name.text().strip() or "{nome}"
         o.overwrite = self.overwrite.isChecked()
         o.copy_metadata = self.copy_metadata.isChecked()
         return Settings.from_dict(s.to_dict())

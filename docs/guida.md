@@ -9,7 +9,7 @@
 - [Reti neurali (IA)](#reti-neurali-ia)
 - [Sviluppo dei RAW](#sviluppo-dei-raw)
 - [Salvare](#salvare)
-- [Elaborare più foto](#elaborare-più-foto)
+- [Esportare più foto](#esportare-più-foto)
 - [Preset](#preset)
 - [Scorciatoie da tastiera](#scorciatoie-da-tastiera)
 - [Domande frequenti](#domande-frequenti)
@@ -20,8 +20,10 @@
 
 - **In alto**: i menu e la barra dei comandi principali. Ogni pulsante mostra la propria scorciatoia
   (es. *Apri file…* `Ctrl+O`). I comandi non disponibili in quel momento sono grigi.
-- **Al centro**: la foto. A sinistra della linea c'è l'originale (**PRIMA**), a destra il risultato
-  (**DOPO**). L'etichetta in alto indica quanta parte del rumore stimato è stata tolta.
+- **Al centro**: la foto. Appena aperta è mostrata così com'è (*ORIGINALE*); dopo **Applica**, a
+  sinistra della linea c'è l'originale (**PRIMA**), a destra il risultato (**DOPO**). L'etichetta in
+  alto indica quanta parte del rumore stimato è stata tolta.
+- **Sotto la foto**, se hai aperto una cartella: il [carosello](#aprire-una-cartella) con le miniature.
 - **Sotto la foto**: una striscia ricorda i comandi della vista. Si nasconde da
   *Visualizza → Mostra i tasti sotto la foto*.
 - **A destra**: il pannello delle impostazioni, dall'alto verso il basso nell'ordine in cui servono.
@@ -35,8 +37,14 @@
 
 - **Apri file…** (`Ctrl+O`), oppure **trascina** una foto nella finestra.
 - Dalla pagina iniziale o da *File → Apri recenti* si riaprono le ultime foto.
-- Trascinando **più foto o una cartella** si apre direttamente [Elabora più file](#elaborare-più-foto).
+- **Apri cartella…** (`Ctrl+Maiusc+O`), oppure trascina una cartella o più foto: vedi
+  [Aprire una cartella](#aprire-una-cartella).
 - Formati: RAW di quasi tutte le fotocamere (NEF, CR2, CR3, ARW, RAF, ORF, RW2, PEF, DNG…), JPG, PNG, TIFF.
+
+La foto si apre **senza riduzione del rumore**: scegli il **metodo** (ed eventualmente le regolazioni)
+nel pannello, poi premi **Applica la riduzione del rumore** (`Ctrl+Invio`), oppure fai clic
+sull'avviso in basso nella foto. Da quel momento il risultato si aggiorna da solo a ogni modifica.
+Aprendo un'altra foto si riparte dall'originale, con le stesse regolazioni pronte da applicare.
 
 Il pannello **Foto** riassume il file aperto: dimensioni, fotocamera, ISO e un giudizio sul rumore
 misurato (basso, medio, alto, molto alto).
@@ -44,6 +52,27 @@ misurato (basso, medio, alto, molto alto).
 Se una fotocamera è troppo recente per LibRaw (o il file è un NEF «alta efficienza»), con
 [Adobe DNG Converter](https://helpx.adobe.com/camera-raw/using/adobe-dng-converter.html) installato
 (gratuito) l'app converte il file in DNG e lo apre senza altri passaggi.
+
+### Aprire una cartella
+
+![Carosello con quattro foto selezionate](screenshots/07-carosello.png)
+
+Con **Apri cartella…** le foto della cartella (non delle sottocartelle) compaiono nel **carosello**
+sotto la foto, in ordine di nome, e si apre la prima. Le miniature dei RAW sono le anteprime
+incorporate dalla fotocamera, quindi arrivano subito anche con centinaia di file.
+
+| Azione | Come |
+|---|---|
+| Aprire una foto | Clic sulla miniatura |
+| Foto precedente / successiva | `Pag↑` / `Pag↓`, oppure le frecce con il carosello attivo |
+| Aggiungere o togliere una foto dalla selezione | `Ctrl+clic` |
+| Selezionare un intervallo | `Maiusc+clic` |
+| Selezionare tutte | *Seleziona tutte*, oppure `Ctrl+A` con il carosello attivo |
+| Tenere selezionata solo la foto aperta | *Solo quella aperta* |
+| Chiudere il carosello | ✕ a destra |
+
+La foto aperta ha un bordo blu; quelle selezionate hanno lo sfondo blu e una spunta. Le foto
+selezionate si esportano insieme con [Esporta selezionate](#esportare-più-foto).
 
 ## Guardare il risultato
 
@@ -150,7 +179,22 @@ subito, il salvataggio parte appena il nuovo sviluppo è pronto.
 
 ![Avviso al termine dell'esportazione](screenshots/06-esportazione.jpg)
 
-Nel pannello **Salvataggio** scegli:
+**Esporta come…** (`Ctrl+Maiusc+E`) apre una finestra in cui scegli:
+
+- **Dove salvare**: nella stessa cartella della foto, in una sottocartella accanto alla foto (es.
+  `denoised`) oppure in una cartella a scelta (*Sfoglia…*);
+- **Formato**: TIFF o PNG (8 o 16 bit), JPEG (qualità 1–100) oppure **DNG**, il formato RAW aperto
+  che Lightroom, darktable, Capture One e simili sviluppano come l'originale. NEF, CR3, ARW e gli
+  altri RAW delle fotocamere sono formati chiusi che nessun programma esterno può scrivere: per
+  riesportare un RAW si usa il DNG, che si crea solo da foto RAW.
+
+![Finestra di esportazione](screenshots/10-esporta.png)
+
+Il file tiene il **nome dell'originale** con l'estensione del formato scelto (`DSC_0001.NEF` →
+`DSC_0001.tif`). In fondo alla finestra compare il percorso esatto. **Esporta** (`Ctrl+E`) salva
+subito, con la cartella e il formato dell'ultima scelta.
+
+Le stesse scelte, con qualche opzione in più, sono nel pannello **Salvataggio**:
 
 - **Formato**: TIFF o PNG (8 o 16 bit), JPEG (qualità 1–100), **DNG** (solo da RAW: un RAW
   ripulito da sviluppare in Lightroom, darktable, Capture One…).
@@ -160,29 +204,33 @@ Nel pannello **Salvataggio** scegli:
   Sotto compare il percorso esatto del file che verrà creato.
 - **Sovrascrivi senza chiedere** (per sicurezza non viene ricordato) e **Copia i metadati**.
 
-Poi **Esporta** (`Ctrl+E`), oppure **Esporta come…** (`Ctrl+Maiusc+E`) per scegliere nome e cartella
-sul momento. Al termine, un avviso riassume formato, dimensione, tempo e metodo, con i pulsanti
-*Apri cartella*, *Mostra il file* e *Apri la foto*.
+Al termine, un avviso riassume formato, dimensione, tempo e metodo, con i pulsanti *Apri cartella*,
+*Mostra il file* e *Apri la foto*.
 
 Vengono conservati metadati (data, fotocamera, obiettivo, GPS, parole chiave…) e profilo colore.
 Le impostazioni usate vengono registrate nella descrizione del file. Il file viene scritto con un nome
 temporaneo e rinominato solo alla fine: un'esportazione interrotta non lascia file a metà, e
-l'originale non viene mai sovrascritto.
+l'originale non viene mai sovrascritto: se il file di uscita coinciderebbe con l'originale (stessa
+cartella e stesso formato) al nome si aggiunge `_1`.
 
-## Elaborare più foto
+## Esportare più foto
 
-![Elabora più file](screenshots/07-elabora-piu-file.png)
+1. [Apri la cartella](#aprire-una-cartella) e seleziona nel carosello le foto da esportare
+   (`Ctrl+clic`, `Maiusc+clic` o *Seleziona tutte*).
+2. **Esporta selezionate…** (`Ctrl+B`, pulsante nell'intestazione del carosello o menu *File*).
+3. Nella finestra scegli il **metodo**, dove salvare, il **formato** e cosa fare se il file esiste già
+   (altro nome `_1`, `_2`…, sovrascrivere o saltare la foto).
+4. **Esporta**. In basso vedi la foto in corso e il tempo stimato per tutte; **Interrompi** (`Esc`)
+   si ferma senza lasciare file a metà.
 
-**File → Elabora più file…** (`Ctrl+B`), oppure trascina più foto o una cartella nella finestra:
+Tutte le foto usano il metodo scelto e le regolazioni del pannello: con «Grana» e «Macchie di colore»
+a 1 ognuna perde esattamente il rumore misurato su di sé. Ogni file tiene il nome dell'originale; se
+due foto darebbero lo stesso nome (es. `IMG_1.NEF` e `IMG_1.JPG` in TIFF) la seconda diventa `IMG_1_1`.
 
-1. aggiungi foto o cartelle (anche con le sottocartelle; le cartelle dei risultati precedenti vengono saltate);
-2. scegli le impostazioni: quelle attuali della finestra principale oppure un preset;
-3. scegli cosa fare se il file di uscita esiste già: altro nome (`_1`, `_2`…), sovrascrivere o saltare;
-4. **Avvia**. Durante l'elaborazione vedi l'avanzamento totale e della foto in corso, con il tempo
-   stimato; **Interrompi** si ferma senza lasciare file a metà.
+Se scegli il **DNG** e tra le foto ci sono JPG, PNG o TIFF, compare *Foto non RAW*: scegli in che
+formato salvarle (TIFF, PNG o JPEG), mentre i RAW diventano DNG.
 
-Al termine un riepilogo indica le foto elaborate, saltate e con errori, con i pulsanti
-*Apri la cartella di uscita* e *Copia l'elenco degli errori*.
+Al termine l'avviso in alto riassume le foto salvate, saltate e quelle non esportate con il motivo.
 
 ## Preset
 
@@ -209,9 +257,11 @@ salvataggio). Da *Preset* puoi eliminare i tuoi preset o aprirne la cartella.
 
 | Scorciatoia | Azione |
 |---|---|
-| `Ctrl+O` | Apri |
+| `Ctrl+O` / `Ctrl+Maiusc+O` | Apri una foto / una cartella |
+| `Ctrl+Invio` | Applica la riduzione del rumore |
+| `Pag↑` / `Pag↓` | Foto precedente / successiva del carosello |
 | `Ctrl+E` / `Ctrl+Maiusc+E` | Esporta / Esporta come |
-| `Ctrl+B` | Elabora più file |
+| `Ctrl+B` | Esporta le foto selezionate nel carosello |
 | `Ctrl+Z` / `Ctrl+Y` | Annulla / Ripeti |
 | `Ctrl+0` / `Ctrl+1` / `Ctrl+2` | Adatta / 100% / 200% |
 | `Ctrl +` / `Ctrl −`, rotellina | Zoom |

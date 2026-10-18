@@ -5,6 +5,30 @@ Tutte le modifiche rilevanti, dalla più recente. Formato ispirato a
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- **Apri cartella…** (`Ctrl+Maiusc+O`, oppure trascinando una cartella nella finestra): le foto della
+  cartella compaiono in un **carosello** di miniature sotto la foto. Un clic apre una foto, `Pag↑` e
+  `Pag↓` passano alla precedente o alla successiva; `Ctrl+clic` e `Maiusc+clic` ne selezionano più d'una.
+- **Esporta selezionate…** (`Ctrl+B`): esporta tutte le foto selezionate nel carosello, scegliendo
+  metodo, cartella, formato e cosa fare se il file esiste già. Scegliendo il DNG, per le foto JPG, PNG
+  e TIFF (che non possono diventare DNG) si sceglie a parte il formato.
+- **Applica** (`Ctrl+Invio`): la foto si apre così com'è e la riduzione del rumore parte solo quando
+  la applichi, dopo aver scelto il metodo. Da quel momento l'anteprima segue le regolazioni; ogni
+  nuova foto riparte dall'originale.
+
+### Modificato
+
+- **Esporta come…** apre una finestra con cartella (stessa della foto, sottocartella accanto alla
+  foto o una cartella a scelta) e formato (TIFF, PNG, JPEG o DNG). La scelta vale poi anche per
+  **Esporta**, che salva subito.
+- La foto esportata tiene il **nome dell'originale** (`DSC_0001.NEF` → `DSC_0001.tif`), senza «_dn».
+  Se il file coincide con l'originale (stessa cartella e stesso formato) si aggiunge `_1`: l'originale
+  non viene mai sovrascritto. La riga di comando resta com'era (`{nome}_dn`).
+- *Elabora più file* è sostituita dal carosello con *Esporta selezionate*.
+- Annulla, Ripeti e Guida nella barra mostrano solo icona e tasto, per fare spazio a *Esporta come…*.
+- Le scorciatoie mostrano i nomi italiani dei tasti (`Maiusc`, `Invio`, `Pag↑`).
+
 ## [0.11.2] - 2026-10-14
 
 ### Corretto

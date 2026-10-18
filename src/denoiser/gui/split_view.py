@@ -89,6 +89,7 @@ class SplitView(QWidget):
         self._split = 0.5
         self._mode = "split"
         self._peek = False  # Spazio tenuto premuto: si vede l'originale
+        self._original_only = False  # riduzione del rumore non ancora applicata: si vede solo l'originale
         self._drag_mode: str | None = None
         self._drag_start = QPointF()
         self._offset_start = QPointF()
@@ -206,6 +207,16 @@ class SplitView(QWidget):
         self._peek = on
         self.update()
 
+    def set_original_only(self, on: bool) -> None:
+        """Mostra solo l'originale (riduzione del rumore non ancora applicata), senza tendina."""
+        if on != self._original_only:
+            self._original_only = on
+            self.update()
+
+    @property
+    def original_only(self) -> bool:
+        return self._original_only
+
     # ------------------------------------------------------------------ zoom
 
     @property
@@ -285,7 +296,7 @@ class SplitView(QWidget):
     # ------------------------------------------------------------------ disegno
 
     def _split_x(self) -> int:
-        if self._peek or self._mode == "before":
+        if self._peek or self._mode == "before" or self._original_only:
             return self.width()
         if self._mode in ("after", "diff"):
             return 0
@@ -350,10 +361,13 @@ class SplitView(QWidget):
                 self._draw_busy(p, after)
 
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        if self._mode == "split" and not self._peek:
+        if self._mode == "split" and not self._peek and not self._original_only:
             self._draw_handle(p, split_x)
         self._draw_labels(p, split_x)
-        if self._hint and split_x < self.width():
+        if self._hint and self._original_only and not self._peek:
+            # In basso, per non coprire la foto che si sta guardando.
+            self._draw_hint(p, QRectF(self.rect()), QPointF(self.width() / 2, self.height() - 44))
+        elif self._hint and split_x < self.width():
             self._draw_hint(p, after)
         else:
             self._hint_rect = QRectF()
@@ -404,6 +418,9 @@ class SplitView(QWidget):
         font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.5)
         p.setFont(font)
         metrics = p.fontMetrics()
+        if self._original_only and not self._peek:
+            self._tag(p, "ORIGINALE · RIDUZIONE DEL RUMORE NON APPLICATA", 10, metrics)
+            return
         if self._peek or self._mode == "before":
             self._tag(p, "PRIMA (ORIGINALE)", 10, metrics)
             return
@@ -443,8 +460,9 @@ class SplitView(QWidget):
         p.drawText(rect, Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, text)
         return rect
 
-    def _draw_hint(self, p: QPainter, area: QRectF) -> None:
-        anchor = QPointF(area.center().x(), self.height() / 2)
+    def _draw_hint(self, p: QPainter, area: QRectF, anchor: QPointF | None = None) -> None:
+        if anchor is None:
+            anchor = QPointF(area.center().x(), self.height() / 2)
         self._hint_rect = self._pill(p, self._hint, anchor, size=10, center=True)
         if self._hint_clickable:  # bordo colorato solo se il messaggio si può cliccare
             p.setPen(QPen(QColor(ACCENT), 1.5))
@@ -454,7 +472,7 @@ class SplitView(QWidget):
     # ------------------------------------------------------------------ interazione
 
     def _near_handle(self, x: float) -> bool:
-        return self._mode == "split" and abs(x - self.width() * self._split) <= _HANDLE_TOLERANCE
+        return self._mode == "split" and not self._original_only and abs(x - self.width() * self._split) <= _HANDLE_TOLERANCE
 
     def mousePressEvent(self, event) -> None:
         if event.button() != Qt.MouseButton.LeftButton or self._base is None:

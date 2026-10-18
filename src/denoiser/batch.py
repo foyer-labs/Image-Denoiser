@@ -14,7 +14,7 @@ from .bayer import denoised_sensor_data
 from .image import Domain, ImageData
 from .io import load_image, save_image
 from .io.dng import write_bayer_dng, write_linear_dng
-from .io.formats import is_supported
+from .io.formats import is_supported, kind_of
 from .io.metadata import copy_metadata
 from .io.naming import output_path, unique_path
 from .pipeline import Analysis, ProgressFn, analyze, denoise_region, render, uses_sensor_stage
@@ -158,6 +158,62 @@ def _export_dng(
         return write_bayer_dng(destination, sensor, make, model, exposure + sensor.source_baseline_exposure, description)
     linear = denoise_region(image, analysis, settings, progress=progress)
     return write_linear_dng(destination, linear, make, model, exposure, description)
+
+
+#: Cosa fare quando il file di uscita esiste già (esportazione di più foto).
+EXISTING_POLICIES = {"rename": "Salva con un altro nome (_1, _2…)", "overwrite": "Sovrascrivi", "skip": "Salta la foto"}
+
+
+def settings_for(path: Path, settings: Settings, non_raw_format: str) -> Settings:
+    """Impostazioni per una foto di un'esportazione multipla.
+
+    Il DNG si può creare solo da un RAW: se è stato scelto il DNG, JPG, PNG e TIFF vengono salvati
+    nel formato ``non_raw_format`` scelto dall'utente per loro.
+    """
+    if settings.output.format != "dng" or kind_of(Path(path)) == "raw":
+        return settings
+    adjusted = Settings.from_dict(settings.to_dict())
+    adjusted.output.format = non_raw_format
+    return adjusted
+
+
+def is_source(destination: Path, source: Path) -> bool:
+    """True se ``destination`` è il file originale stesso (stesso nome, formato e cartella)."""
+    try:
+        return source.is_file() and destination.resolve() == source.resolve()
+    except OSError:
+        return False
+
+
+def export_one(
+    path: Path,
+    settings: Settings,
+    policy: str = "rename",
+    converter=None,
+    use_converter: bool = True,
+    progress: ProgressFn | None = None,
+    taken: frozenset[Path] = frozenset(),
+) -> tuple[str, Path | None, list[str]]:
+    """Esporta una foto di un'esportazione multipla. Restituisce (esito, file salvato, note); esito
+    "ok" o "saltata".
+
+    ``policy``: vedi :data:`EXISTING_POLICIES`. ``taken``: file già prodotti nella stessa esportazione
+    (es. IMG_1.NEF e IMG_1.JPG danno lo stesso nome): non vengono mai sovrascritti né fanno saltare la
+    foto, si usa un nome nuovo. Nemmeno l'originale viene mai sovrascritto, qualunque sia ``policy``.
+    """
+    image = load_image(path, settings.develop, use_converter, converter)
+    destination = output_path(image.meta, settings.output, settings.denoise.algorithm)
+    if destination in taken or is_source(destination, image.meta.source):
+        destination = unique_path(destination)
+    elif destination.exists():
+        if policy == "skip":
+            return "saltata", destination, []
+        if policy == "rename":
+            destination = unique_path(destination)
+    notes = list(image.meta.notes)
+    analysis = analyze(image)
+    saved = export_image(image, analysis, settings, destination, progress, notes)
+    return "ok", saved, notes
 
 
 def process_file(

@@ -13,6 +13,7 @@ import numpy as np
 from PySide6.QtCore import QEvent, QSettings, Qt, QThreadPool, QTimer, QUrl
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QFontMetrics, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QDialog,
     QDialogButtonBox,
@@ -38,8 +39,8 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
-from ..batch import export_image
-from ..image import ImageData
+from ..batch import collect_inputs, export_image, export_one, is_source, settings_for
+from ..image import ImageData, ImageMeta
 from ..io import load_image
 from ..io.dng_converter import find_converter
 from ..algorithms import get_algorithm
@@ -59,11 +60,12 @@ from ..presets import (
     user_presets_dir,
 )
 from ..settings import Settings
-from .batch_dialog import BatchDialog
+from .export_dialog import ExportChoice, ExportDialog
+from .filmstrip import Filmstrip
 from .settings_panel import SettingsPanel
 from .split_view import MODES, SplitView, build_pyramid, to_uint8
 from .style import OK, WARN, app_icon, dark_title_bar, icon
-from .widgets import ActionButton, KeyBar
+from .widgets import ActionButton, KeyBar, shortcut_text
 from .workers import EtaEstimator, Task, format_duration, start
 
 #: Oltre questa area visibile non si elabora la sola zona ma la foto intera (in background): il
@@ -72,6 +74,9 @@ PREVIEW_MAX_PIXELS = 3_000_000
 #: Righe elaborate alla volta nella resa tonale dell'anteprima (limita la memoria sulle foto grandi).
 _TONE_ROWS = 512
 _MAX_RECENT = 10
+_DROP_TEXT = "Trascina qui una foto o una cartella, oppure"
+_APPLY_HINT = ("Scegli il metodo nel pannello a destra, poi fai clic qui o premi «Applica» (Ctrl+Invio) "
+               "per ridurre il rumore")
 
 
 def _luma(rgb: np.ndarray) -> np.ndarray:
@@ -195,6 +200,9 @@ class MainWindow(QMainWindow):
         self._presets: dict = {}
         self._retone_request = 0
         self._banner_serial = 0
+        #: Riduzione del rumore applicata alla foto aperta (ogni nuova foto si apre senza).
+        self._applied = False
+        self._export_run: dict | None = None  # esportazione di più foto in corso
 
         self._build_central()
         self.panel = SettingsPanel(self._load_last_settings())
@@ -258,11 +266,16 @@ class MainWindow(QMainWindow):
         pv.setContentsMargins(0, 0, 0, 0)
         pv.setSpacing(0)
         pv.addWidget(self.view, 1)
+        self.filmstrip = Filmstrip(self._run)
+        self.filmstrip.hide()
+        pv.addWidget(self.filmstrip)
         self.keybar = KeyBar([
+            ("Ctrl+Invio", "applica"),
             ("Rotellina", "zoom"),
             ("Trascina", "sposta la foto"),
             ("Doppio clic", "100% su quel punto"),
             ("Spazio", "tieni premuto per l'originale"),
+            ("Pag↑ Pag↓", "foto precedente / successiva"),
             ("\\", "cambia confronto"),
             ("Ctrl+E", "esporta"),
             ("F1", "tutte le scorciatoie"),
@@ -292,20 +305,25 @@ class MainWindow(QMainWindow):
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title = QLabel("<span style='font-size:16pt; font-weight:600'>Togli il rumore dalle tue foto</span>")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.drop_text = QLabel("Trascina qui una foto, oppure")
+        self.drop_text = QLabel(_DROP_TEXT)
         self.drop_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         open_button = QPushButton(icon("open"), "  Apri una foto…   (Ctrl+O)")
         open_button.setObjectName("primary")
         open_button.setMinimumHeight(36)
         open_button.clicked.connect(self._open_dialog)
+        folder_button = QPushButton(icon("batch"), "  Apri una cartella…   (Ctrl+Maiusc+O)")
+        folder_button.setMinimumHeight(32)
+        folder_button.setToolTip("Mostra tutte le foto della cartella in un carosello in basso, per scorrerle "
+                                 "e sceglierne più d'una da esportare")
+        folder_button.clicked.connect(self._open_folder_dialog)
         formats = QLabel("RAW (NEF, CR3, ARW, RAF, DNG…), JPG, PNG, TIFF")
         formats.setObjectName("hint")
         formats.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        steps = QLabel("<b>1</b> Apri &nbsp;·&nbsp; <b>2</b> Guarda al 100% &nbsp;·&nbsp; <b>3</b> Esporta")
+        steps = QLabel("<b>1</b> Apri &nbsp;·&nbsp; <b>2</b> Scegli il metodo e applica &nbsp;·&nbsp; <b>3</b> Esporta")
         steps.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        for w in (logo, title, self.drop_text, open_button, formats, steps):
+        for w in (logo, title, self.drop_text, open_button, folder_button, formats, steps):
             v.addWidget(w)
-        keys = KeyBar([("Ctrl+O", "apri"), ("Ctrl+B", "più file"), ("F1", "guida e scorciatoie")])
+        keys = KeyBar([("Ctrl+O", "apri"), ("Ctrl+Maiusc+O", "cartella"), ("F1", "guida e scorciatoie")])
         keys.setStyleSheet("QFrame#keybar{background:transparent;border:none;}")
         keys.layout().insertStretch(0, 1)
         keys_row = QHBoxLayout()
@@ -389,8 +407,8 @@ class MainWindow(QMainWindow):
             act.setShortcut(QKeySequence(shortcut))
         if icon_name:
             act.setIcon(icon(icon_name))
-        shortcut_text = act.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
-        full_tip = (tip or text.replace("…", "")) + (f" ({shortcut_text})" if shortcut_text else "")
+        keys = shortcut_text(act)
+        full_tip = (tip or text.replace("…", "")) + (f" ({keys})" if keys else "")
         act.setToolTip(full_tip)
         act.setStatusTip(tip or "")
         act.triggered.connect(slot)
@@ -399,9 +417,19 @@ class MainWindow(QMainWindow):
     def _build_actions(self) -> None:
         a = self._action
         self.act_open = a("Apri…", self._open_dialog, "Ctrl+O", "Apri una foto (RAW, JPG, PNG, TIFF)", "open")
-        self.act_export = a("Esporta", self._export, "Ctrl+E", "Salva la foto ripulita con le impostazioni di salvataggio", "export")
-        self.act_export_as = a("Esporta come…", self._export_as, "Ctrl+Shift+E", "Scegli nome, cartella e formato prima di salvare")
-        self.act_batch = a("Elabora più file…", self._batch, "Ctrl+B", "Applica le impostazioni a più foto o a intere cartelle", "batch")
+        self.act_open_folder = a("Apri cartella…", self._open_folder_dialog, "Ctrl+Shift+O",
+                                 "Mostra tutte le foto di una cartella nel carosello in basso", "batch")
+        self.act_apply = a("Applica", self._apply, "Ctrl+Return",
+                           "Riduce il rumore della foto aperta con il metodo e le regolazioni scelti")
+        self.act_export = a("Esporta", self._export, "Ctrl+E",
+                            "Salva subito la foto ripulita, con cartella e formato dell'ultima esportazione", "export")
+        self.act_export_as = a("Esporta come…", self._export_as, "Ctrl+Shift+E",
+                               "Scegli cartella e formato (TIFF, PNG, JPEG o DNG) prima di salvare")
+        self.act_batch = a("Esporta selezionate…", self._export_selected, "Ctrl+B",
+                           "Esporta tutte le foto selezionate nel carosello, scegliendo metodo, cartella e formato",
+                           "batch")
+        self.act_prev = a("Foto precedente", lambda: self.filmstrip.step(-1), "PgUp", "Apre la foto precedente del carosello")
+        self.act_next = a("Foto successiva", lambda: self.filmstrip.step(1), "PgDown", "Apre la foto successiva del carosello")
         self.act_out_folder = a("Apri la cartella di salvataggio", self._open_output_folder, None,
                                 "Apre in Esplora risorse la cartella dove vengono salvate le foto")
         self.act_quit = a("Esci", self.close, "Ctrl+Q")
@@ -434,6 +462,7 @@ class MainWindow(QMainWindow):
         mb = self.menuBar()
         m = mb.addMenu("&File")
         m.addAction(self.act_open)
+        m.addAction(self.act_open_folder)
         self.recent_menu = m.addMenu("Apri recenti")
         m.addSeparator()
         for act in (self.act_export, self.act_export_as, self.act_batch):
@@ -443,6 +472,8 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addAction(self.act_quit)
         m = mb.addMenu("&Modifica")
+        m.addAction(self.act_apply)
+        m.addSeparator()
         for act in (self.act_undo, self.act_redo):
             m.addAction(act)
         m.addSeparator()
@@ -450,6 +481,9 @@ class MainWindow(QMainWindow):
         m = mb.addMenu("&Visualizza")
         for act in (self.act_fit, self.act_100, self.act_200, self.act_zoom_in, self.act_zoom_out):
             m.addAction(act)
+        m.addSeparator()
+        m.addAction(self.act_prev)
+        m.addAction(self.act_next)
         m.addSeparator()
         m.addAction(self.act_cycle)
         for act in self.mode_actions.values():
@@ -484,10 +518,11 @@ class MainWindow(QMainWindow):
         open_button.setObjectName("primary")
         self._open_button = open_button
         bar.addWidget(open_button)
-        bar.addWidget(ActionButton(self.act_batch))
+        bar.addWidget(ActionButton(self.act_open_folder, "Apri cartella…"))
         bar.addSeparator()
-        bar.addWidget(ActionButton(self.act_undo))
-        bar.addWidget(ActionButton(self.act_redo))
+        # Solo icona e tasto: il nome è nel suggerimento, così «Esporta» resta visibile anche a 1366 px.
+        bar.addWidget(ActionButton(self.act_undo, show_text=False))
+        bar.addWidget(ActionButton(self.act_redo, show_text=False))
         bar.addSeparator()
         bar.addWidget(ActionButton(self.act_fit, "Adatta"))
         bar.addWidget(ActionButton(self.act_100, "100%"))
@@ -505,10 +540,15 @@ class MainWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         bar.addWidget(spacer)
-        bar.addWidget(ActionButton(self.act_help, "Guida e scorciatoie"))
+        bar.addWidget(ActionButton(self.act_help, show_text=False))
+        bar.addSeparator()
+        bar.addWidget(ActionButton(self.act_export_as, "Esporta come…"))
         export_button = ActionButton(self.act_export, "Esporta")
         export_button.setObjectName("primary")
         bar.addWidget(export_button)
+        export_selected = ActionButton(self.act_batch, "Esporta selezionate…")
+        export_selected.setObjectName("primary")
+        self.filmstrip.add_header_widget(export_selected)
 
     def _connect(self) -> None:
         self._preview_timer = QTimer(self, singleShot=True, interval=250)
@@ -537,6 +577,10 @@ class MainWindow(QMainWindow):
         self.panel.dngConverterChosen.connect(self._set_dng_converter)
         self.panel.dngConverterReset.connect(lambda: self._set_dng_converter(""))
         self.panel.useDngConverterToggled.connect(self._toggle_dng_converter)
+        self.panel.applyRequested.connect(self._apply)
+        self.filmstrip.photoActivated.connect(self.open_path)
+        self.filmstrip.selectionChanged.connect(self._update_enabled)
+        self.filmstrip.closeRequested.connect(self._close_filmstrip)
         self.zoom_button.setText("Zoom —")
 
     # ================================================================== apertura
@@ -552,7 +596,7 @@ class MainWindow(QMainWindow):
 
     def _reset_drop_box(self) -> None:
         self._drop_box.setStyleSheet(self._drop_box.styleSheet().replace("#4a8fd9", "#555"))
-        self.drop_text.setText("Trascina qui una foto, oppure")
+        self.drop_text.setText(_DROP_TEXT)
 
     def dropEvent(self, event) -> None:
         self._reset_drop_box()
@@ -561,8 +605,10 @@ class MainWindow(QMainWindow):
         supported = [p for p in paths if p.is_file() and is_supported(p)]
         if not folders and len(supported) == 1:
             self.open_path(supported[0])
+        elif len(folders) == 1 and not supported:
+            self.open_folder(folders[0])
         elif folders or len(supported) > 1:
-            self._batch(initial=folders + supported)
+            self._show_photos(collect_inputs(folders + supported), None)
         else:
             self.statusBar().showMessage("Formato non supportato: si possono aprire RAW, JPG, PNG e TIFF.", 6000)
 
@@ -572,7 +618,38 @@ class MainWindow(QMainWindow):
         if path:
             self.open_path(Path(path))
 
+    def _open_folder_dialog(self) -> None:
+        start_dir = self._qs.value("ultima_cartella", "")
+        folder = QFileDialog.getExistingDirectory(self, "Apri cartella", start_dir)
+        if folder:
+            self.open_folder(Path(folder))
+
+    def open_folder(self, folder: Path) -> None:
+        """Mostra le foto della cartella nel carosello e apre la prima."""
+        photos = collect_inputs([folder])
+        if not photos:
+            self.statusBar().showMessage(f"Nella cartella {folder.name} non ci sono foto RAW, JPG, PNG o TIFF.", 6000)
+            return
+        self._qs.setValue("ultima_cartella", str(folder))
+        self._show_photos(photos, folder)
+
+    def _show_photos(self, photos: list[Path], folder: Path | None) -> None:
+        if not photos:
+            return
+        self.filmstrip.set_photos(photos, folder)
+        self.filmstrip.show()
+        self._update_enabled()
+        self.open_path(photos[0])
+
+    def _close_filmstrip(self) -> None:
+        self.filmstrip.clear()
+        self.filmstrip.hide()
+        self._update_enabled()
+
     def open_path(self, path: Path) -> None:
+        if not self.filmstrip.isHidden() and not self.filmstrip.contains(path):
+            self._close_filmstrip()  # foto di un'altra cartella: il carosello non la riguarda
+        self.filmstrip.set_shown(path)
         self._load(path, reset_view=True)
 
     def _converter(self):
@@ -619,6 +696,10 @@ class MainWindow(QMainWindow):
         self._loading = False
         self._loaded_develop = self._loading_develop
         self.statusBar().clearMessage()
+        if path != self._path:
+            # Ogni foto nuova si apre com'è: la riduzione del rumore parte solo con «Applica».
+            self._applied = False
+            self.view.set_original_only(True)
         self._image, self._analysis = result
         self._path = path
         self._preview_cache = None
@@ -754,6 +835,10 @@ class MainWindow(QMainWindow):
         visible = self.view.visible_image_rect()
         if visible is None:
             return
+        if not self._applied:
+            self.view.set_original_only(True)
+            self._set_hint(_APPLY_HINT, "apply")
+            return
         settings = self.panel.settings()
         key = self._preview_key(settings)
         if self._preview_task is not None:
@@ -855,15 +940,31 @@ class MainWindow(QMainWindow):
         self._preview_done(task)
 
     def _set_hint(self, text: str, action: str | None = None) -> None:
-        """Messaggio al centro della vista. ``action``: "download" (un clic scarica il modello),
-        "progress" (avanzamento della foto intera, tolto alla fine del calcolo) o None."""
+        """Messaggio al centro della vista. ``action``: "download" (un clic scarica il modello), "apply"
+        (un clic applica la riduzione del rumore), "progress" (avanzamento della foto intera, tolto alla
+        fine del calcolo) o None."""
         self._hint_action = action if text else None
-        self.view.set_hint(text, clickable=action == "download")
+        self.view.set_hint(text, clickable=action in ("download", "apply"))
 
     def _on_hint_clicked(self) -> None:
         algorithm = self.panel.current_algorithm()
-        if self._hint_action == "download" and not algorithm.is_available():
+        if self._hint_action == "apply":
+            self._apply()
+        elif self._hint_action == "download" and not algorithm.is_available():
             self._download_model(algorithm.key)
+
+    def _apply(self) -> None:
+        """Applica la riduzione del rumore alla foto aperta: da qui l'anteprima segue le regolazioni."""
+        if self._image is None or self._applied:
+            return
+        self._applied = True
+        self.view.set_original_only(False)
+        self._set_hint("")
+        self._update_enabled()
+        self._preview_timer.stop()
+        self._start_preview()
+        if not self.panel.current_algorithm().is_available():
+            self._ensure_model()  # propone subito il download del modello
 
     def _toggle_keybar(self, on: bool) -> None:
         self.keybar.setVisible(on)
@@ -1190,6 +1291,8 @@ class MainWindow(QMainWindow):
         self._update_enabled()
 
     def _cancel_job(self) -> None:
+        if self._export_run is not None:
+            self._export_run["cancelled"] = True  # anche se la foto in corso finisce prima di accorgersene
         if self._job is not None:
             self._job.cancel()
             self.job_label.setText("Interruzione in corso…")
@@ -1199,7 +1302,14 @@ class MainWindow(QMainWindow):
         has_image = self._image is not None
         self.act_export.setEnabled(has_image and not busy)
         self.act_export_as.setEnabled(has_image and not busy)
-        self.act_batch.setEnabled(self._job is None)
+        self.act_apply.setEnabled(has_image and not self._applied and not self._loading)
+        self.panel.set_applied(self._applied if has_image else None, shortcut_text(self.act_apply))
+        selected = len(self.filmstrip.selected_paths())
+        self.act_batch.setEnabled(self._job is None and selected > 0)
+        self.act_batch.setText(f"Esporta selezionate ({selected})…" if selected else "Esporta selezionate…")
+        browsing = not self.filmstrip.isHidden() and len(self.filmstrip.paths()) > 1
+        self.act_prev.setEnabled(browsing)
+        self.act_next.setEnabled(browsing)
         self.act_undo.setEnabled(self._history_index > 0)
         self.act_redo.setEnabled(0 <= self._history_index < len(self._history) - 1)
         for act in (self.act_fit, self.act_100, self.act_200, self.act_zoom_in, self.act_zoom_out, self.act_cycle):
@@ -1211,25 +1321,31 @@ class MainWindow(QMainWindow):
         self._export_to(None)
 
     def _export_as(self) -> None:
-        if self._image is None:
+        """Fa scegliere cartella e formato; la scelta vale poi anche per «Esporta»."""
+        if self._image is None or self._job is not None:
             return
         settings = self.panel.settings()
-        suggested = output_path(self._image.meta, settings.output, settings.denoise.algorithm)
-        filters = {"tiff": "TIFF (*.tif *.tiff)", "jpeg": "JPEG (*.jpg *.jpeg)", "png": "PNG (*.png)", "dng": "DNG (*.dng)"}
-        if self._image.domain.value != "linear":
-            filters.pop("dng")
-        chosen, selected = QFileDialog.getSaveFileName(
-            self, "Esporta come", str(suggested), ";;".join(filters.values()), filters.get(settings.output.format, "")
-        )
-        if not chosen:
-            return
-        path = Path(chosen)
-        ext = path.suffix.lower()
-        fmt = {".tif": "tiff", ".tiff": "tiff", ".jpg": "jpeg", ".jpeg": "jpeg", ".png": "png", ".dng": "dng"}.get(ext)
-        if fmt is None:
-            fmt = next((k for k, v in filters.items() if v == selected), settings.output.format)
-            path = path.with_name(path.name + OUTPUT_EXTENSIONS[fmt])
-        self._export_to(path, fmt, confirmed=True)
+        is_raw = self._image.domain.value == "linear"
+        dialog = ExportDialog(self, settings.output, self._image.meta, int(is_raw), int(not is_raw),
+                              start_dir=str(self._path.parent) if self._path else "")
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        choice = dialog.choice()
+        dialog.deleteLater()
+        if accepted:
+            self._remember_export_choice(choice)
+            self._export_to(None)
+
+    def _remember_export_choice(self, choice: ExportChoice) -> None:
+        self.panel.set_output(choice.folder, choice.format, choice.bit_depth, choice.jpeg_quality)
+        self._qs.setValue("formato_non_raw", choice.non_raw_format)
+        self._qs.setValue("se_esiste", choice.policy)
+        if choice.algorithm:
+            self.panel.set_algorithm(choice.algorithm)
+
+    def _non_raw_format(self) -> str:
+        """Formato per JPG, PNG e TIFF quando l'ultima esportazione era in DNG."""
+        value = self._qs.value("formato_non_raw", "tiff")
+        return value if value in ("tiff", "png", "jpeg") else "tiff"
 
     def _export_to(self, destination: Path | None, fmt: str | None = None, confirmed: bool = False) -> None:
         if self._image is None or self._analysis is None:
@@ -1254,11 +1370,14 @@ class MainWindow(QMainWindow):
         if fmt:
             settings.output.format = fmt
         if settings.output.format == "dng" and self._image.domain.value != "linear":
-            QMessageBox.information(self, "Esporta", "Il formato DNG è disponibile solo per le foto RAW: "
-                                    "scegli TIFF, PNG o JPEG in «Salvataggio».")
-            return
+            # Il DNG si crea solo dai RAW: si usa il formato scelto per le foto non RAW.
+            settings.output.format = self._non_raw_format()
         if destination is None:
             destination = output_path(self._image.meta, settings.output, settings.denoise.algorithm)
+        if is_source(destination, self._image.meta.source):
+            # Stesso nome, formato e cartella dell'originale: l'originale non si sovrascrive mai.
+            destination = unique_path(destination)
+            confirmed = True
         if destination.exists() and not settings.output.overwrite and not confirmed:
             box = QMessageBox(self)
             box.setWindowTitle("File esistente")
@@ -1306,6 +1425,8 @@ class MainWindow(QMainWindow):
         extra = f"<br><span style='color:#e0b050'>{'; '.join(notes)}</span>" if notes else ""
         self.banner_text.setText(f"<b>Fatto!</b> {Path(path).name} salvato in {Path(path).parent}"
                                  f"<br><span style='color:#a8c0dc'>{summary}</span>{extra}")
+        for button in self.banner_buttons:
+            button.show()
         self.banner.show()
         self._banner_serial += 1
         serial = self._banner_serial
@@ -1345,14 +1466,125 @@ class MainWindow(QMainWindow):
         elif self._last_export:
             self._open_export_folder()
 
-    def _batch(self, initial: list[Path] | None = None) -> None:
+    # ================================================================== esportazione di più foto
+
+    def _export_selected(self) -> None:
+        """Esporta le foto selezionate nel carosello con il metodo scelto e le regolazioni del pannello."""
         if self._job is not None:
             return
-        converter, use_converter = self._converter()
-        dialog = BatchDialog(self, self.panel.settings, converter, use_converter,
-                             self._qs.value("ultima_cartella", ""), initial)
-        dialog.exec()
+        paths = self.filmstrip.selected_paths()
+        if not paths:
+            self.statusBar().showMessage("Seleziona nel carosello le foto da esportare (Ctrl+clic o Maiusc+clic).", 6000)
+            return
+        settings = self.panel.settings()
+        raw = sum(1 for p in paths if kind_of(p) == "raw")
+        example = ImageMeta(source=paths[0], kind=kind_of(paths[0]) or "")
+        policy = self._qs.value("se_esiste", "rename")
+        dialog = ExportDialog(self, settings.output, example, raw, len(paths) - raw,
+                              algorithm=settings.denoise.algorithm, non_raw_format=self._non_raw_format(),
+                              policy=policy if isinstance(policy, str) else "rename", start_dir=str(paths[0].parent))
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        choice = dialog.choice()
         dialog.deleteLater()
+        if not accepted:
+            return
+        self._remember_export_choice(choice)
+        if not self._ensure_model():  # propone il download; si riprova a scaricamento finito
+            return
+        self._export_run = {
+            "paths": paths, "index": 0, "settings": self.panel.settings(), "choice": choice,
+            "results": [], "outputs": [], "started": time.perf_counter(),
+        }
+        self._export_next()
+
+    def _export_next(self) -> None:
+        run = self._export_run
+        if run is None:
+            return
+        if run.get("cancelled"):
+            self._export_finished(interrupted=True)
+            return
+        if run["index"] >= len(run["paths"]):
+            self._export_finished(interrupted=False)
+            return
+        path = run["paths"][run["index"]]
+        converter, use_converter = self._converter()
+        settings = settings_for(path, run["settings"], run["choice"].non_raw_format)
+        task = Task(export_one, path, settings, run["choice"].policy, converter, use_converter,
+                    with_progress=True, taken=frozenset(run["outputs"]))
+        task.signals.progress.connect(lambda f, m, p=path: self._on_export_progress(p, f, m))
+        task.signals.finished.connect(lambda res, p=path: self._export_one_done(p, res))
+        task.signals.failed.connect(lambda msg, _d, p=path: self._export_one_done(p, ("errore", None, [humanize_error(msg)[1]])))
+        task.signals.cancelled.connect(lambda: self._export_finished(interrupted=True))
+        message = f"Esportazione 1 di {len(run['paths'])}: {path.name}…"
+        if run["index"] == 0:
+            self._begin_job(task, "export-many", message)
+        else:
+            self._job = task
+            self._run(task)
+
+    def _on_export_progress(self, path: Path, fraction: float, message: str) -> None:
+        run = self._export_run
+        if run is None:
+            return
+        total = len(run["paths"])
+        overall = (run["index"] + fraction) / total
+        self.job_bar.setRange(0, 100)
+        self.job_bar.setValue(int(overall * 100))
+        eta = self._eta.text(overall)
+        self.job_label.setText(f"Esportazione {run['index'] + 1} di {total}: {path.name} · {message}"
+                               + (f" · {eta} in tutto" if eta else ""))
+
+    def _export_one_done(self, path: Path, result) -> None:
+        run = self._export_run
+        if run is None:
+            return
+        outcome, saved, notes = result
+        if outcome == "ok" and saved is not None:
+            run["outputs"].append(saved)
+        run["results"].append((path, outcome, "; ".join(notes)))
+        run["index"] += 1
+        self._export_next()
+
+    def _export_finished(self, interrupted: bool) -> None:
+        run, self._export_run = self._export_run, None
+        self._end_job()
+        if run is None:
+            return
+        results, outputs = run["results"], run["outputs"]
+        ok = sum(1 for _, outcome, _ in results if outcome == "ok")
+        skipped = sum(1 for _, outcome, _ in results if outcome == "saltata")
+        errors = [(p, n) for p, outcome, n in results if outcome == "errore"]
+        elapsed = format_duration(time.perf_counter() - run["started"])
+        if outputs:
+            self._last_export = Path(outputs[-1])
+        folders = {Path(o).parent for o in outputs}
+        where = f" in {next(iter(folders))}" if len(folders) == 1 else (" nelle cartelle scelte" if folders else "")
+        total = len(run["paths"])
+        if skipped == total:
+            text = f"<b>Nessuna foto salvata:</b> {'la foto esiste' if total == 1 else f'le {total} foto esistono'} " \
+                   "già nella cartella scelta."
+        else:
+            head = "Esportazione interrotta" if interrupted else ("Fatto!" if not errors else "Esportazione terminata")
+            text = f"<b>{head}</b> {ok} foto su {total} salvate{where} in {elapsed}"
+            if skipped:
+                text += f" · {skipped} saltate perché già presenti"
+        if errors:
+            listed = "<br>".join(f"{p.name}: {n}" for p, n in errors[:5])
+            more = f"<br>… e altre {len(errors) - 5}" if len(errors) > 5 else ""
+            text += f"<br><span style='color:#e0b050'>{len(errors)} non esportate:<br>{listed}{more}</span>"
+        notes = [n for _, outcome, n in results if outcome == "ok" and n]
+        if notes:
+            text += f"<br><span style='color:#e0b050'>{'; '.join(sorted(set(notes))[:3])}</span>"
+        self.banner_text.setText(text)
+        for button in self.banner_buttons:
+            button.setVisible(bool(outputs))
+        self.banner.show()
+        self._banner_serial += 1
+        serial = self._banner_serial
+        if not errors:
+            QTimer.singleShot(30000, lambda: serial == self._banner_serial and self.banner.hide())
+        QApplication.alert(self)
 
     # ================================================================== impostazioni ricordate
 
@@ -1363,6 +1595,11 @@ class MainWindow(QMainWindow):
         except (ValueError, TypeError, AttributeError, KeyError):
             settings = Settings()
         settings.output.overwrite = False
+        if not self._qs.value("nome_originale", False, type=bool):
+            # Dalla 0.12 la foto esportata tiene il nome dell'originale (prima si aggiungeva «_dn»).
+            if settings.output.name_template == "{nome}_dn":
+                settings.output.name_template = "{nome}"
+            self._qs.setValue("nome_originale", True)
         return settings
 
     def _save_last_settings(self) -> None:
@@ -1436,16 +1673,23 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self, "Guida rapida",
             "<h3>Come si usa</h3>"
-            "<ol><li><b>Apri</b> una foto (o trascinala nella finestra).</li>"
-            "<li>La foto si apre al <b>100%</b>: a sinistra della linea l'originale, a destra il risultato. "
-            "Trascina la linea, sposta la foto, scegli il punto con il doppio clic. Rimpicciolendo la foto "
-            "(Ctrl+0) il risultato viene calcolato sulla foto intera.</li>"
+            "<ol><li><b>Apri</b> una foto (Ctrl+O) o una <b>cartella</b> (Ctrl+Maiusc+O), anche trascinandola nella "
+            "finestra. Le foto della cartella compaiono nel <b>carosello</b> in basso: un clic apre una foto, "
+            "Pag↑ e Pag↓ passano alla precedente o alla successiva.</li>"
+            "<li>La foto si apre al <b>100%</b> così com'è. Scegli il <b>metodo</b> nel pannello e premi "
+            "<b>Applica</b> (Ctrl+Invio): a sinistra della linea l'originale, a destra il risultato. Da quel momento "
+            "il risultato segue le regolazioni; ogni nuova foto riparte dall'originale.</li>"
             "<li>Regola <b>Grana</b> e <b>Macchie di colore</b> (1 = rumore misurato). Tutto il resto ha già "
             "valori consigliati; la spiegazione di ogni controllo compare in basso nel pannello.</li>"
-            "<li><b>Esporta</b> (Ctrl+E). Per più foto: <b>Elabora più file</b> (Ctrl+B).</li></ol>"
+            "<li><b>Esporta come…</b> (Ctrl+Maiusc+E) per scegliere cartella e formato (TIFF, PNG, JPEG o DNG); "
+            "<b>Esporta</b> (Ctrl+E) salva subito con l'ultima scelta. Per più foto: selezionale nel carosello "
+            "con Ctrl+clic o Maiusc+clic e usa <b>Esporta selezionate</b> (Ctrl+B).</li></ol>"
             "<h3>Scorciatoie</h3><table>"
-            "<tr><td>Ctrl+O</td><td>Apri</td></tr><tr><td>Ctrl+E / Ctrl+Maiusc+E</td><td>Esporta / Esporta come</td></tr>"
-            "<tr><td>Ctrl+B</td><td>Elabora più file</td></tr><tr><td>Ctrl+Z / Ctrl+Y</td><td>Annulla / Ripeti</td></tr>"
+            "<tr><td>Ctrl+O / Ctrl+Maiusc+O</td><td>Apri una foto / una cartella</td></tr>"
+            "<tr><td>Ctrl+Invio</td><td>Applica la riduzione del rumore</td></tr>"
+            "<tr><td>Pag↑ / Pag↓</td><td>Foto precedente / successiva del carosello</td></tr>"
+            "<tr><td>Ctrl+E / Ctrl+Maiusc+E</td><td>Esporta / Esporta come</td></tr>"
+            "<tr><td>Ctrl+B</td><td>Esporta le foto selezionate</td></tr><tr><td>Ctrl+Z / Ctrl+Y</td><td>Annulla / Ripeti</td></tr>"
             "<tr><td>Ctrl+0 / Ctrl+1 / Ctrl+2</td><td>Adatta / 100% / 200%</td></tr>"
             "<tr><td>Ctrl + / Ctrl −, rotellina</td><td>Zoom</td></tr><tr><td>Frecce (+ Maiusc)</td><td>Sposta la vista</td></tr>"
             "<tr><td>Spazio (tenuto)</td><td>Mostra l'originale</td></tr>"

@@ -336,8 +336,15 @@ class ParamForm(QWidget):
             w.installEventFilter(filt)
 
 
+#: Nomi italiani dei tasti, come sulle tastiere italiane.
+_KEY_NAMES = (("Shift", "Maiusc"), ("Return", "Invio"), ("PgUp", "Pag↑"), ("PgDown", "Pag↓"))
+
+
 def shortcut_text(action: QAction) -> str:
-    return action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+    text = action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+    for english, italian in _KEY_NAMES:
+        text = text.replace(english, italian)
+    return text
 
 
 def kbd(text: str) -> QLabel:

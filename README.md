@@ -33,7 +33,8 @@ Nessun abbonamento, nessun caricamento nel cloud: la foto non lascia mai il PC.
   di non perdere dettaglio; con la foto rimpicciolita, risultato calcolato sulla **foto intera**.
 - **Salva in TIFF, PNG, JPEG o DNG**, conservando metadati (EXIF, GPS, parole chiave…) e profilo colore.
   Il DNG ripulito si apre in Lightroom, darktable e simili come un RAW.
-- **Elabora intere cartelle** con le stesse impostazioni o con un preset.
+- **Apre intere cartelle** in un carosello di miniature: scorri le foto, selezionane quante vuoi ed
+  esportale tutte insieme, scegliendo metodo, cartella e formato.
 
 ## Schermate
 
@@ -41,7 +42,7 @@ Nessun abbonamento, nessun caricamento nel cloud: la foto non lascia mai il PC.
 |:---:|:---:|
 | <img src="docs/screenshots/01-benvenuto.png" width="420"><br>**Pagina iniziale** con i file recenti | <img src="docs/screenshots/04-adatta.jpg" width="420"><br>**Tutta la foto**, originale a sinistra e risultato a destra |
 | <img src="docs/screenshots/03-rumore-tolto.jpg" width="420"><br>**Rumore tolto** (×4): solo grana uniforme = dettaglio salvo | <img src="docs/screenshots/05-intelligenza-artificiale.jpg" width="420"><br>**Reti neurali** in locale, con stato del modello e della GPU |
-| <img src="docs/screenshots/06-esportazione.jpg" width="420"><br>**Esportazione** con riepilogo e accesso al file | <img src="docs/screenshots/07-elabora-piu-file.png" width="420"><br>**Elabora più file** con avanzamento e riepilogo |
+| <img src="docs/screenshots/06-esportazione.jpg" width="420"><br>**Esportazione** con riepilogo e accesso al file | <img src="docs/screenshots/07-carosello.png" width="420"><br>**Carosello** della cartella, con più foto selezionate da esportare |
 
 Altre schermate e la spiegazione di ogni comando sono nella **[guida all'uso](docs/guida.md)**.
 
@@ -63,9 +64,9 @@ Una scheda video (NVIDIA, AMD o Intel, tramite DirectML) accelera molto le reti 
 
 ## Uso in tre passi
 
-1. **Apri** una foto (`Ctrl+O`, oppure trascinala nella finestra). Si apre al 100%, dove il rumore si vede davvero.
-2. **Regola** «Grana» e «Macchie di colore» se serve: 1 = rumore misurato. Tutto il resto ha già valori consigliati.
-3. **Esporta** (`Ctrl+E`). Per più foto: **Elabora più file** (`Ctrl+B`).
+1. **Apri** una foto (`Ctrl+O`) o una cartella (`Ctrl+Maiusc+O`), anche trascinandola nella finestra. Si apre al 100%, dove il rumore si vede davvero.
+2. **Scegli il metodo e applica** (`Ctrl+Invio`); regola «Grana» e «Macchie di colore» se serve: 1 = rumore misurato. Tutto il resto ha già valori consigliati.
+3. **Esporta come…** (`Ctrl+Maiusc+E`) per scegliere cartella e formato (TIFF, PNG, JPEG o DNG), poi **Esporta** (`Ctrl+E`) per le successive. Per più foto: selezionale nel carosello ed **Esporta selezionate** (`Ctrl+B`).
 
 Ogni pulsante mostra la propria scorciatoia, e `F1` apre la guida con l'elenco completo.
 

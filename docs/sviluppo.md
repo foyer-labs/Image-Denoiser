@@ -33,7 +33,7 @@ src/denoiser/
 ├── joint.py            reti neurali: forze separate su luminanza e colore
 ├── hotpixel.py         pixel caldi sulle immagini già sviluppate
 ├── color.py            trasformazioni di colore (opponente, sRGB)
-├── batch.py            esportazione atomica ed elaborazione di più file
+├── batch.py            esportazione atomica ed esportazione di più file (nomi, file esistenti, DNG solo dai RAW)
 ├── algorithms/         wavelet, nlm, bilateral, neural (interfaccia comune Denoiser/Param)
 ├── neural/             lettura sicura dei .pth, grafi ONNX di DRUNet, SCUNet e Restormer, tasselli, runtime, download
 ├── io/                 lettura (RAW, JPG/PNG/TIFF, DNG Converter), scrittura (TIFF/PNG/JPEG/DNG), metadati
@@ -41,7 +41,9 @@ src/denoiser/
     ├── main_window.py  finestra, menu, anteprima, esportazione, annulla/ripeti
     ├── split_view.py   vista prima/dopo (zoom in pixel fisici, piramide di riduzione)
     ├── splash.py       schermata di avvio con barra di avanzamento
-    ├── settings_panel.py, widgets.py, batch_dialog.py, style.py, workers.py
+    ├── filmstrip.py    carosello delle foto di una cartella (miniature, selezione)
+    ├── export_dialog.py finestra «Esporta come» / «Esporta N foto»: cartella, formato, metodo
+    ├── settings_panel.py, widgets.py, style.py, workers.py
 packaging/              PyInstaller: denoiser.spec, icona, punti d'avvio
 tests/                  test pytest con immagini e DNG sintetici
 docs/                   documentazione e schermate
