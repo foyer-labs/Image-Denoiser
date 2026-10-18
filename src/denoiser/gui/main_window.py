@@ -1596,7 +1596,7 @@ class MainWindow(QMainWindow):
             settings = Settings()
         settings.output.overwrite = False
         if not self._qs.value("nome_originale", False, type=bool):
-            # Dalla 0.12 la foto esportata tiene il nome dell'originale (prima si aggiungeva «_dn»).
+            # Dalla 0.12.0 la foto esportata tiene il nome dell'originale (prima si aggiungeva «_dn»).
             if settings.output.name_template == "{nome}_dn":
                 settings.output.name_template = "{nome}"
             self._qs.setValue("nome_originale", True)

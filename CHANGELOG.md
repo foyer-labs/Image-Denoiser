@@ -5,6 +5,8 @@ Tutte le modifiche rilevanti, dalla più recente. Formato ispirato a
 
 ## [Non rilasciato]
 
+## [0.12.0] - 2026-10-18
+
 ### Aggiunto
 
 - **Apri cartella…** (`Ctrl+Maiusc+O`, oppure trascinando una cartella nella finestra): le foto della
@@ -169,7 +171,8 @@ Codice distribuito con licenza MIT.
 - Correzioni di memoria, concorrenza, cache e gestione degli errori; registro degli errori in
   `%LOCALAPPDATA%\Denoiser\errori.log`.
 
-[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.2...HEAD
+[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.10.1...v0.11.0
