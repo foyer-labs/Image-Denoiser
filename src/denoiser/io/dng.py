@@ -25,6 +25,7 @@ _BLACK_REPEAT_DIM, _BLACK_LEVEL, _WHITE_LEVEL = 50713, 50714, 50717
 _COLOR_MATRIX1, _ILLUMINANT1 = 50721, 50778
 _AS_SHOT_NEUTRAL, _BASELINE_EXPOSURE = 50728, 50730
 _MAKE, _MODEL, _ORIENTATION = 271, 272, 274
+_XMP = 700
 _PHOTOMETRIC_CFA, _PHOTOMETRIC_LINEAR_RAW = 32803, 34892
 _ILLUMINANT_D65 = 21
 
@@ -108,7 +109,7 @@ def baseline_exposure_from_dng_bytes(data: bytes) -> float:
         return 0.0
 
 
-def _common_tags(make: str, model: str, baseline_exposure: float) -> list[tuple]:
+def _common_tags(make: str, model: str, baseline_exposure: float, xmp: bytes | None = None) -> list[tuple]:
     unique = f"{make} {model}".strip() or "Denoiser"
     tags = [
         (_DNG_VERSION, "B", 4, (1, 4, 0, 0), True),
@@ -121,6 +122,8 @@ def _common_tags(make: str, model: str, baseline_exposure: float) -> list[tuple]
         tags.append((_MODEL, "s", 0, model, True))
     if baseline_exposure:
         tags.append((_BASELINE_EXPOSURE, "2i", 1, _srational([baseline_exposure], 100), True))
+    if xmp:  # impostazioni di Camera Raw (vedi develop.camera_raw_xmp)
+        tags.append((_XMP, "B", len(xmp), xmp, True))
     return tags
 
 
@@ -131,10 +134,13 @@ def write_bayer_dng(
     model: str = "",
     baseline_exposure: float = 0.0,
     description: str | None = None,
+    xmp: bytes | None = None,
 ) -> Path:
+    """``sensor.camera_neutral``, se c'è, è il bilanciamento con cui aprire il DNG: sostituisce quello
+    del DNG d'origine."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tags = _common_tags(make, model, baseline_exposure)
+    tags = _common_tags(make, model, baseline_exposure, xmp)
     tags += [
         (_ORIENTATION, "H", 1, (_FLIP_TO_ORIENTATION.get(sensor.flip, 1),), True),
         (_CFA_REPEAT_DIM, "H", 2, (2, 2), True),
@@ -144,7 +150,9 @@ def write_bayer_dng(
         (_WHITE_LEVEL, "I", 1, (int(round(sensor.white)),), True),
     ]
     if sensor.source_color_tags:
-        tags += sensor.source_color_tags
+        tags += [t for t in sensor.source_color_tags if t[0] != _AS_SHOT_NEUTRAL or sensor.camera_neutral is None]
+        if sensor.camera_neutral is not None:
+            tags.append((_AS_SHOT_NEUTRAL, "2I", 3, _rational(sensor.camera_neutral), True))
     else:
         if sensor.xyz_to_camera is None:
             raise ValueError("Matrice colore della fotocamera non disponibile: impossibile scrivere il DNG")
@@ -174,12 +182,13 @@ def write_linear_dng(
     model: str = "",
     baseline_exposure: float = 0.0,
     description: str | None = None,
+    xmp: bytes | None = None,
 ) -> Path:
     """``linear_rgb``: RGB lineare (primari sRGB) già orientato e bilanciato, float in [0, 1]."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     data = np.round(np.clip(linear_rgb, 0.0, 1.0) * 65535).astype(np.uint16)
-    tags = _common_tags(make, model, baseline_exposure)
+    tags = _common_tags(make, model, baseline_exposure, xmp)
     tags += [
         (_BLACK_LEVEL, "I", 1, (0,), True),
         (_WHITE_LEVEL, "I", 1, (65535,), True),

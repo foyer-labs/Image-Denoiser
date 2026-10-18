@@ -151,15 +151,15 @@ class ExportDialog(QDialog):
         self.algorithm: QComboBox | None = None
         self.policy: QComboBox | None = None
         if algorithm is not None:
-            labels = {}
+            labels = {"": "Quello di ogni foto (consigliato)"}
             for key, alg in ALGORITHMS.items():
                 text = f"{alg.label} — {alg.summary}"
                 if not alg.is_available():
                     text += f" (da scaricare, {alg.spec.size_mb} MB)"
                 labels[key] = text
             self.algorithm = make_combo(labels, algorithm, tooltips={k: a.description for k, a in ALGORITHMS.items()})
-            self.algorithm.setToolTip("Metodo di riduzione del rumore applicato a tutte le foto, con le regolazioni "
-                                      "del pannello (Grana, Macchie di colore…).")
+            self.algorithm.setToolTip("Ogni foto viene esportata con le sue regolazioni. Qui puoi usare per tutte lo "
+                                      "stesso metodo di riduzione del rumore, con i suoi valori consigliati.")
             self.algorithm.currentIndexChanged.connect(self._update)
             form.addRow(form_label("Metodo"), self.algorithm)
             self.policy = make_combo(EXISTING_POLICIES, policy)
@@ -210,7 +210,7 @@ class ExportDialog(QDialog):
         problems = []
         if self.chosen.isChecked() and not (folder and Path(folder).is_absolute()):
             problems.append("Scegli la cartella in cui salvare (Sfoglia…).")
-        if self.algorithm is not None and not get_algorithm(self.algorithm.currentData()).is_available():
+        if self.algorithm is not None and self.algorithm.currentData() and                 not get_algorithm(self.algorithm.currentData()).is_available():
             spec = get_algorithm(self.algorithm.currentData()).spec
             problems.append(f"{spec.label} non è ancora sul computer: alla conferma ti verrà proposto di "
                             f"scaricarlo ({spec.size_mb} MB, una sola volta).")
@@ -236,7 +236,7 @@ class ExportDialog(QDialog):
             jpeg_quality=self.quality.value(),
             non_raw_format=self.non_raw.currentData(),
             policy=self.policy.currentData() if self.policy is not None else "rename",
-            algorithm=self.algorithm.currentData() if self.algorithm is not None else None,
+            algorithm=(self.algorithm.currentData() or None) if self.algorithm is not None else None,
         )
 
 

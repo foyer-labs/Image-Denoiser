@@ -40,6 +40,9 @@ def _add_settings_args(p: argparse.ArgumentParser) -> None:
     g.add_argument("--bilanciamento", choices=sorted(WB_MODES), help="bilanciamento del bianco")
     g.add_argument("--moltiplicatori", type=float, nargs=3, metavar=("R", "G", "B"),
                    help="moltiplicatori per --bilanciamento custom")
+    g.add_argument("--temperatura", type=float, metavar="K",
+                   help="temperatura della luce in kelvin (implica --bilanciamento temperature)")
+    g.add_argument("--tinta", type=float, help="tinta: − verso il verde, + verso il magenta (con --temperatura)")
     g.add_argument("--demosaic", choices=sorted(DEMOSAIC_ALGORITHMS), help="algoritmo di demosaicizzazione")
     g.add_argument(
         "--livello", choices=("3", "2"),
@@ -88,6 +91,13 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
         s.develop.wb_custom = tuple(args.moltiplicatori)
         if not args.bilanciamento:
             s.develop.wb_mode = "custom"  # indicare i moltiplicatori vale come scelta del bilanciamento
+    if args.temperatura is not None or args.tinta is not None:
+        if args.temperatura is not None:
+            s.develop.temperature = min(max(args.temperatura, 2000.0), 15000.0)
+        if args.tinta is not None:
+            s.develop.tint = min(max(args.tinta, -150.0), 150.0)
+        if not args.bilanciamento:
+            s.develop.wb_mode = "temperature"
     if args.demosaic:
         s.develop.demosaic = args.demosaic
     if args.livello:

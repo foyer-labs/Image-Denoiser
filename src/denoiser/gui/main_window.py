@@ -44,6 +44,8 @@ from ..image import ImageData, ImageMeta
 from ..io import load_image
 from ..io.dng_converter import find_converter
 from ..algorithms import get_algorithm
+from ..color import srgb_decode
+from ..develop import ColorInfo, histogram, render_tone, temperature_from_multipliers
 from ..io.formats import OUTPUT_EXTENSIONS, file_dialog_filter, is_supported, kind_of
 from ..io.naming import output_path, unique_path
 from ..noise import estimate_sigma, sample_tiles
@@ -60,6 +62,14 @@ from ..presets import (
     user_presets_dir,
 )
 from ..settings import Settings
+from ..sidecar import (
+    SECTIONS as PHOTO_SECTIONS,
+    apply_photo_settings,
+    changed_fields,
+    copy_fields,
+    read_photo_settings,
+    write_photo_settings,
+)
 from .export_dialog import ExportChoice, ExportDialog
 from .filmstrip import Filmstrip
 from .settings_panel import SettingsPanel
@@ -88,6 +98,23 @@ def contains(outer, inner) -> bool:
     ox, oy, ow, oh = outer
     ix, iy, iw, ih = inner
     return ox <= ix and oy <= iy and ix + iw <= ox + ow and iy + ih <= oy + oh
+
+
+#: Pixel della copia ridotta della foto usata per l'istogramma (calcolato a ogni regolazione).
+_PROXY_PIXELS = 400_000
+
+
+def raw_develop(settings: dict) -> dict:
+    """La parte dello sviluppo che richiede di riaprire il RAW con LibRaw (il resto è istantaneo)."""
+    return {"demosaic": settings["develop"]["demosaic"]}
+
+
+def make_proxy(pixels: np.ndarray) -> np.ndarray:
+    h, w = pixels.shape[:2]
+    scale = min(1.0, (_PROXY_PIXELS / max(h * w, 1)) ** 0.5)
+    if scale >= 1.0:
+        return pixels.copy()
+    return cv2.resize(pixels, (max(1, int(w * scale)), max(1, int(h * scale))), interpolation=cv2.INTER_AREA)
 
 
 def base_job(image: ImageData, analysis: Analysis, settings: Settings):
@@ -203,6 +230,12 @@ class MainWindow(QMainWindow):
         #: Riduzione del rumore applicata alla foto aperta (ogni nuova foto si apre senza).
         self._applied = False
         self._export_run: dict | None = None  # esportazione di più foto in corso
+        self._proxy: np.ndarray | None = None  # copia ridotta della foto, per l'istogramma
+        #: Foto a cui appartengono le regolazioni del pannello, e come erano all'ultimo salvataggio.
+        self._settings_path: Path | None = None
+        self._photo_snapshot: dict | None = None
+        #: Cronologia di annulla/ripeti di ogni foto aperta in questa sessione.
+        self._histories: dict[str, tuple[list[dict], int]] = {}
 
         self._build_central()
         self.panel = SettingsPanel(self._load_last_settings())
@@ -561,6 +594,8 @@ class MainWindow(QMainWindow):
         self._save_timer.timeout.connect(self._save_last_settings)
         self._history_timer = QTimer(self, singleShot=True, interval=600)
         self._history_timer.timeout.connect(self._push_history)
+        self._photo_timer = QTimer(self, singleShot=True, interval=500)
+        self._photo_timer.timeout.connect(self._save_photo_settings)
 
         self.view.viewportChanged.connect(lambda *_: self._schedule_preview())
         self.view.zoomChanged.connect(lambda z: self.zoom_button.setText(f"Zoom {z * 100:.0f}%"))
@@ -578,6 +613,8 @@ class MainWindow(QMainWindow):
         self.panel.dngConverterReset.connect(lambda: self._set_dng_converter(""))
         self.panel.useDngConverterToggled.connect(self._toggle_dng_converter)
         self.panel.applyRequested.connect(self._apply)
+        self.panel.wbPickToggled.connect(self._toggle_wb_pick)
+        self.view.imagePicked.connect(self._on_wb_picked)
         self.filmstrip.photoActivated.connect(self.open_path)
         self.filmstrip.selectionChanged.connect(self._update_enabled)
         self.filmstrip.closeRequested.connect(self._close_filmstrip)
@@ -649,8 +686,80 @@ class MainWindow(QMainWindow):
     def open_path(self, path: Path) -> None:
         if not self.filmstrip.isHidden() and not self.filmstrip.contains(path):
             self._close_filmstrip()  # foto di un'altra cartella: il carosello non la riguarda
+        if path != self._settings_path:
+            self._switch_photo_settings(path)
         self.filmstrip.set_shown(path)
         self._load(path, reset_view=True)
+
+    # ================================================================== regolazioni di ogni foto
+
+    def _settings_for_photo(self, path: Path) -> Settings:
+        """Regolazioni salvate della foto; per una foto mai regolata: sviluppo neutro e la riduzione del
+        rumore usata per ultima. Il salvataggio (cartella, formato) resta quello del pannello."""
+        if path == self._settings_path:
+            return self.panel.settings()
+        current = self.panel.settings()
+        base = Settings()
+        base.denoise, base.output = current.denoise, current.output
+        return apply_photo_settings(base, read_photo_settings(path))
+
+    def _switch_photo_settings(self, path: Path) -> None:
+        """Porta nel pannello le regolazioni di ``path`` (salvando prima quelle della foto precedente)."""
+        self._flush_photo_settings()
+        if self._settings_path is not None:
+            self._histories[str(self._settings_path)] = (self._history, self._history_index)
+        self._history_timer.stop()
+        settings = self._settings_for_photo(path)
+        self._set_panel(settings)
+        self._settings_path = path
+        self._photo_snapshot = settings.to_dict()
+        stored = self._histories.get(str(path))
+        if stored is not None:
+            self._history, self._history_index = stored
+        else:
+            self._history, self._history_index = [], -1
+            self._push_history(force=True)
+        self._preset_name, self._preset_snapshot = "", None
+        self._update_preset_label()
+        self._update_enabled()
+
+    def _flush_photo_settings(self) -> None:
+        if self._photo_timer.isActive():
+            self._photo_timer.stop()
+            self._save_photo_settings()
+
+    def _save_photo_settings(self) -> None:
+        """Salva le regolazioni della foto aperta e, se richiesto, copia le modifiche sulle selezionate."""
+        path, before = self._settings_path, self._photo_snapshot
+        if path is None or before is None:
+            return
+        current = self.panel.settings()
+        after = current.to_dict()
+        if all(after[k] == before[k] for k in PHOTO_SECTIONS):
+            return
+        fields = changed_fields(before, after)
+        self._photo_snapshot = after
+        try:
+            write_photo_settings(path, current)
+        except OSError as exc:
+            self.statusBar().showMessage(f"Regolazioni di {path.name} non salvate: {exc}", 8000)
+            return
+        written = [path]
+        if self.filmstrip.sync_enabled() and fields:
+            failed = []
+            for other in self.filmstrip.selected_paths():
+                if other == path:
+                    continue
+                try:
+                    write_photo_settings(other, copy_fields(self._settings_for_photo(other), current, fields))
+                    written.append(other)
+                except OSError:
+                    failed.append(other.name)
+            message = f"Modifica applicata anche ad altre {len(written) - 1} foto selezionate."
+            if failed:
+                message += f" Non salvata per: {', '.join(failed[:3])}."
+            self.statusBar().showMessage(message, 5000)
+        self.filmstrip.set_edited(written)
 
     def _converter(self):
         if not self._qs.value("usa_dng_converter", True, type=bool):
@@ -663,7 +772,7 @@ class MainWindow(QMainWindow):
         settings = self.panel.settings()
         self._loading = True
         self._loading_path = path
-        self._loading_develop = settings.to_dict()["develop"]
+        self._loading_develop = raw_develop(settings.to_dict())
         self._update_enabled()
         if self.view.has_image():
             self.view.set_overlay(f"Apertura di {path.name}…" if reset_view else "Nuovo sviluppo del RAW in corso…")
@@ -673,7 +782,7 @@ class MainWindow(QMainWindow):
 
         def load(p: Path, develop):
             image = load_image(p, develop, use_converter, converter)
-            return image, analyze(image)
+            return image, analyze(image), make_proxy(image.pixels)
 
         task = Task(load, path, settings.develop)
         task.signals.finished.connect(lambda res: self._on_loaded(generation, path, res, reset_view))
@@ -681,7 +790,7 @@ class MainWindow(QMainWindow):
         self._run(task)
 
     def _reload(self) -> None:
-        """Nuovo sviluppo del RAW dopo un cambio di bilanciamento o di ricostruzione dei colori."""
+        """Nuovo sviluppo del RAW dopo un cambio di ricostruzione dei colori."""
         # Se un'altra foto si sta aprendo, va riaperta quella (con il nuovo sviluppo), non la precedente.
         target = self._loading_path if self._loading else self._path
         if target is not None and kind_of(target) == "raw":
@@ -700,7 +809,7 @@ class MainWindow(QMainWindow):
             # Ogni foto nuova si apre com'è: la riduzione del rumore parte solo con «Applica».
             self._applied = False
             self.view.set_original_only(True)
-        self._image, self._analysis = result
+        self._image, self._analysis, self._proxy = result
         self._path = path
         self._preview_cache = None
         self._base_rgb = None  # la base vecchia non corrisponde più: l'anteprima aspetta quella nuova
@@ -708,6 +817,7 @@ class MainWindow(QMainWindow):
         self._qs.setValue("ultima_cartella", str(path.parent))
         self._add_recent(path)
         self._update_info()
+        self._update_histogram()
         self._update_output_example()
         self.stack.setCurrentWidget(self._view_page)
         self.view.set_overlay("")
@@ -758,10 +868,63 @@ class MainWindow(QMainWindow):
             "notes": " · ".join(notes),
             "is_raw": is_raw,
             "is_bayer": image.raw_source is not None,
-            "shot_wb": m.wb_multipliers,
+            "wb_equivalents": self._wb_equivalents(),
         })
         kind = m.source.suffix.upper().lstrip(".")
         self.file_label.setText(" · ".join([kind] + parts[2:]))
+
+    def _wb_equivalents(self) -> dict:
+        """Temperatura e tinta di «Come scattato», «Automatico» e «Luce diurna» per la foto aperta."""
+        analysis = self._analysis
+        color = analysis.color if analysis is not None else None
+        if color is None:
+            return {}
+        result = {"camera": color.as_shot()}
+        if analysis.auto_wb is not None:
+            result["auto"] = temperature_from_multipliers(color.base * analysis.auto_wb, color.cam_from_xyz)
+        if color.daylight is not None:
+            result["daylight"] = temperature_from_multipliers(color.daylight, color.cam_from_xyz)
+        return result
+
+    def _update_histogram(self) -> None:
+        """Istogramma della foto con lo sviluppo attuale (su una copia ridotta: pochi millisecondi)."""
+        if self._proxy is None or self._analysis is None or self._image is None:
+            self.panel.curve.set_histogram(None)
+            return
+        settings = self.panel.settings()
+        rgb = render_tone(self._proxy, self._image.domain.value == "linear", self._analysis.tone_params(),
+                          settings.develop, settings.tone)
+        self.panel.curve.set_histogram(histogram(rgb))
+
+    def _toggle_wb_pick(self, on: bool) -> None:
+        self.view.set_pick_mode(on and self._image is not None)
+        if on and self._image is not None:
+            self.statusBar().showMessage("Fai clic su un punto che dovrebbe essere grigio o bianco (Esc per annullare).")
+        else:
+            self.statusBar().clearMessage()
+
+    def _on_wb_picked(self, x: float, y: float) -> None:
+        """Contagocce: il punto cliccato (media di un piccolo quadrato) diventa neutro."""
+        image, analysis = self._image, self._analysis
+        self.view.set_pick_mode(False)
+        self.statusBar().clearMessage()
+        if image is None or analysis is None:
+            self.panel.pick_wb.setChecked(False)
+            return
+        r = max(2, int(min(image.width, image.height) / 400))
+        xi, yi = int(x), int(y)
+        patch = image.pixels[max(0, yi - r): yi + r + 1, max(0, xi - r): xi + r + 1].reshape(-1, 3)
+        if image.domain.value != "linear":
+            patch = srgb_decode(patch)
+        mean = patch.mean(axis=0)
+        if patch.size == 0 or mean.max() >= 0.98 or mean.min() <= 1e-4:
+            self.panel.pick_wb.setChecked(False)
+            self.statusBar().showMessage("Quel punto è bruciato o troppo scuro: scegline uno grigio o bianco ma "
+                                         "con un po' di dettaglio.", 6000)
+            return
+        color = analysis.color or ColorInfo.for_display()
+        temperature, tint = temperature_from_multipliers(color.base * color.gray_world(mean), color.cam_from_xyz)
+        self.panel.set_wb(temperature, tint)
 
     # ================================================================== immagine «prima» e anteprima
 
@@ -979,6 +1142,7 @@ class MainWindow(QMainWindow):
 
     def _settings_changed_common(self) -> None:
         self._save_timer.start()
+        self._photo_timer.start()
         if not self._applying_history:
             self._history_timer.start()
         self._update_preset_label()
@@ -993,6 +1157,7 @@ class MainWindow(QMainWindow):
     def _on_tone_changed(self) -> None:
         self._settings_changed_common()
         self.view.mark_stale()
+        self._update_histogram()
         self._tone_timer.start()
 
     def _on_develop_changed(self) -> None:
@@ -1036,13 +1201,15 @@ class MainWindow(QMainWindow):
         """Dopo preset, annulla/ripeti o ripristino: aggiorna solo ciò che serve."""
         current = self.panel.settings().to_dict()
         self._save_timer.start()
+        self._photo_timer.start()
         self._update_preset_label()
         self._update_output_example()
         self._update_info()
-        if current["develop"] != previous["develop"] and self._image is not None:
+        if raw_develop(current) != raw_develop(previous) and self._image is not None:
             self._develop_timer.start()
-        elif current["tone"] != previous["tone"]:
+        elif current["tone"] != previous["tone"] or current["develop"] != previous["develop"]:
             self.view.mark_stale()
+            self._update_histogram()
             self._tone_timer.start()
         self.view.mark_stale()
         self._schedule_preview()
@@ -1252,8 +1419,10 @@ class MainWindow(QMainWindow):
         self.panel.refresh_algorithms(download_text="Download in corso…")
         self._schedule_preview()
 
-    def _ensure_model(self) -> bool:
-        algorithm = self.panel.current_algorithm()
+    def _ensure_model(self, key: str | None = None) -> bool:
+        """True se il modello del metodo ``key`` (di norma quello del pannello) è sul computer;
+        altrimenti propone di scaricarlo."""
+        algorithm = get_algorithm(key) if key else self.panel.current_algorithm()
         if algorithm.is_available():
             return True
         spec = algorithm.spec
@@ -1291,6 +1460,9 @@ class MainWindow(QMainWindow):
         self._update_enabled()
 
     def _cancel_job(self) -> None:
+        if self.view.pick_mode:
+            self.panel.pick_wb.setChecked(False)
+            return
         if self._export_run is not None:
             self._export_run["cancelled"] = True  # anche se la foto in corso finisce prima di accorgersene
         if self._job is not None:
@@ -1339,8 +1511,6 @@ class MainWindow(QMainWindow):
         self.panel.set_output(choice.folder, choice.format, choice.bit_depth, choice.jpeg_quality)
         self._qs.setValue("formato_non_raw", choice.non_raw_format)
         self._qs.setValue("se_esiste", choice.policy)
-        if choice.algorithm:
-            self.panel.set_algorithm(choice.algorithm)
 
     def _non_raw_format(self) -> str:
         """Formato per JPG, PNG e TIFF quando l'ultima esportazione era in DNG."""
@@ -1355,7 +1525,7 @@ class MainWindow(QMainWindow):
             return
         settings = self.panel.settings()
         develop_changed = (kind_of(self._path) == "raw" and
-                           (self._develop_timer.isActive() or settings.to_dict()["develop"] != self._loaded_develop))
+                           (self._develop_timer.isActive() or raw_develop(settings.to_dict()) != self._loaded_develop))
         if self._loading or develop_changed:
             # La foto sta per essere risviluppata (bilanciamento o colori appena cambiati): si esporta
             # appena è pronta, altrimenti il file avrebbe lo sviluppo precedente.
@@ -1469,19 +1639,20 @@ class MainWindow(QMainWindow):
     # ================================================================== esportazione di più foto
 
     def _export_selected(self) -> None:
-        """Esporta le foto selezionate nel carosello con il metodo scelto e le regolazioni del pannello."""
+        """Esporta le foto selezionate nel carosello, ognuna con le sue regolazioni."""
         if self._job is not None:
             return
         paths = self.filmstrip.selected_paths()
         if not paths:
             self.statusBar().showMessage("Seleziona nel carosello le foto da esportare (Ctrl+clic o Maiusc+clic).", 6000)
             return
+        self._flush_photo_settings()
         settings = self.panel.settings()
         raw = sum(1 for p in paths if kind_of(p) == "raw")
         example = ImageMeta(source=paths[0], kind=kind_of(paths[0]) or "")
         policy = self._qs.value("se_esiste", "rename")
         dialog = ExportDialog(self, settings.output, example, raw, len(paths) - raw,
-                              algorithm=settings.denoise.algorithm, non_raw_format=self._non_raw_format(),
+                              algorithm="", non_raw_format=self._non_raw_format(),
                               policy=policy if isinstance(policy, str) else "rename", start_dir=str(paths[0].parent))
         accepted = dialog.exec() == QDialog.DialogCode.Accepted
         choice = dialog.choice()
@@ -1489,10 +1660,19 @@ class MainWindow(QMainWindow):
         if not accepted:
             return
         self._remember_export_choice(choice)
-        if not self._ensure_model():  # propone il download; si riprova a scaricamento finito
-            return
+        output = self.panel.settings().output
+        per_photo = {}
+        for path in paths:  # ogni foto con le sue regolazioni; il metodo scelto nella finestra vale per tutte
+            photo = self._settings_for_photo(path)
+            photo.output = output
+            if choice.algorithm and photo.denoise.algorithm != choice.algorithm:
+                photo.denoise.algorithm, photo.denoise.params = choice.algorithm, {}
+            per_photo[str(path)] = photo
+        for key in sorted({photo.denoise.algorithm for photo in per_photo.values()}):
+            if not self._ensure_model(key):  # propone il download; si riprova a scaricamento finito
+                return
         self._export_run = {
-            "paths": paths, "index": 0, "settings": self.panel.settings(), "choice": choice,
+            "paths": paths, "index": 0, "settings": per_photo, "choice": choice,
             "results": [], "outputs": [], "started": time.perf_counter(),
         }
         self._export_next()
@@ -1509,7 +1689,7 @@ class MainWindow(QMainWindow):
             return
         path = run["paths"][run["index"]]
         converter, use_converter = self._converter()
-        settings = settings_for(path, run["settings"], run["choice"].non_raw_format)
+        settings = settings_for(path, run["settings"][str(path)], run["choice"].non_raw_format)
         task = Task(export_one, path, settings, run["choice"].policy, converter, use_converter,
                     with_progress=True, taken=frozenset(run["outputs"]))
         task.signals.progress.connect(lambda f, m, p=path: self._on_export_progress(p, f, m))
@@ -1679,6 +1859,9 @@ class MainWindow(QMainWindow):
             "<li>La foto si apre al <b>100%</b> così com'è. Scegli il <b>metodo</b> nel pannello e premi "
             "<b>Applica</b> (Ctrl+Invio): a sinistra della linea l'originale, a destra il risultato. Da quel momento "
             "il risultato segue le regolazioni; ogni nuova foto riparte dall'originale.</li>"
+            "<li>Nel pannello <b>Sviluppo</b> regola bilanciamento (anche con il contagocce), esposizione, toni "
+            "e la curva sopra l'istogramma. Ogni foto ricorda le sue regolazioni; per una raffica attiva "
+            "<i>Applica le modifiche a tutte le selezionate</i> nel carosello.</li>"
             "<li>Regola <b>Grana</b> e <b>Macchie di colore</b> (1 = rumore misurato). Tutto il resto ha già "
             "valori consigliati; la spiegazione di ogni controllo compare in basso nel pannello.</li>"
             "<li><b>Esporta come…</b> (Ctrl+Maiusc+E) per scegliere cartella e formato (TIFF, PNG, JPEG o DNG); "
@@ -1695,7 +1878,7 @@ class MainWindow(QMainWindow):
             "<tr><td>Spazio (tenuto)</td><td>Mostra l'originale</td></tr>"
             "<tr><td>\\</td><td>Tendina → solo dopo → solo prima → rumore tolto</td></tr>"
             "<tr><td>Doppio clic su un cursore</td><td>Valore consigliato</td></tr>"
-            "<tr><td>Esc</td><td>Interrompe l'operazione in corso</td></tr></table>"
+            "<tr><td>Esc</td><td>Interrompe l'operazione in corso o il contagocce</td></tr></table>"
             "<p>Vista <b>«rumore tolto»</b>: mostra ciò che è stato rimosso. Se vedi solo grana uniforme il dettaglio "
             "è salvo; se compaiono contorni, abbassa «Grana» o alza «Recupero dettaglio».</p>",
         )
@@ -1757,6 +1940,7 @@ class MainWindow(QMainWindow):
         from ..neural.runtime import release_sessions
 
         release_sessions()  # libera la scheda video prima di uscire
+        self._flush_photo_settings()
         self._save_last_settings()
         self._qs.setValue("geometria", self.saveGeometry())
         self._qs.setValue("stato_finestra", self.saveState())

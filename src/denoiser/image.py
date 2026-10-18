@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .develop import ColorInfo
 from .noise import NoiseModel, NoiseProfile
 
 
@@ -45,6 +46,8 @@ class ImageMeta:
     icc_profile: bytes | None = None
     #: Note da mostrare all'utente (es. conversione tramite Adobe DNG Converter).
     notes: list[str] = field(default_factory=list)
+    #: Colori dello sviluppo (solo RAW con matrice colore), per il bilanciamento del bianco.
+    color: ColorInfo | None = None
 
 
 @dataclass

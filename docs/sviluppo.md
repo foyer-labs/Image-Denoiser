@@ -25,7 +25,9 @@ src/denoiser/
 ├── cli.py              riga di comando (elabora, analizza, algoritmi, modelli, preset)
 ├── settings.py         impostazioni (dataclass) con lettura tollerante dei valori
 ├── presets.py          preset predefiniti e personali
-├── pipeline.py         analisi, anteprima di una zona, resa tonale, giudizio sul rumore
+├── pipeline.py         analisi, anteprima di una zona, giudizio sul rumore
+├── develop.py          sviluppo: bilanciamento (temperatura/tinta), toni, curva, saturazione, istogramma, XMP Camera Raw
+├── sidecar.py          regolazioni di ogni foto nel file accanto (DSC_0001.NEF.denoiser)
 ├── bayer.py            livello 3: denoise dei quattro piani Bayer e sviluppo con LibRaw
 ├── raw_noise.py        modello del rumore del sensore e «gemello di rumore»
 ├── noise.py            stima del rumore (zone uniformi, inviluppo inferiore)
@@ -41,7 +43,8 @@ src/denoiser/
     ├── main_window.py  finestra, menu, anteprima, esportazione, annulla/ripeti
     ├── split_view.py   vista prima/dopo (zoom in pixel fisici, piramide di riduzione)
     ├── splash.py       schermata di avvio con barra di avanzamento
-    ├── filmstrip.py    carosello delle foto di una cartella (miniature, selezione)
+    ├── filmstrip.py    carosello delle foto di una cartella (miniature, selezione, applica alle selezionate)
+    ├── curve_editor.py curva dei toni modificabile sopra l'istogramma
     ├── export_dialog.py finestra «Esporta come» / «Esporta N foto»: cartella, formato, metodo
     ├── settings_panel.py, widgets.py, style.py, workers.py
 packaging/              PyInstaller: denoiser.spec, icona, punti d'avvio

@@ -9,6 +9,7 @@ import numpy as np
 import rawpy
 
 from ..bayer import orient
+from ..develop import SRGB_FROM_XYZ, ColorInfo
 from ..image import Domain, ImageData, ImageMeta, RawSource
 from ..settings import DevelopSettings
 from ..raw_noise import measure_noise_twin
@@ -46,6 +47,32 @@ def _has_color_matrix(raw: rawpy.RawPy) -> bool:
     xyz = np.asarray(raw.rgb_xyz_matrix)[:3]
     cam = np.asarray(raw.color_matrix)[:3, :3]
     return bool(np.any(xyz != 0) or (np.any(cam != 0) and not np.allclose(cam, np.eye(3))))
+
+
+def _valid_multipliers(m: np.ndarray) -> bool:
+    return m.size >= 3 and bool(np.all(np.isfinite(m[:3]))) and bool(np.all(m[:3] > 0))
+
+
+def _color_info(raw: rawpy.RawPy, wb: np.ndarray, daylight: np.ndarray) -> ColorInfo | None:
+    """Matrice colore e moltiplicatori dello sviluppo, per il bilanciamento del bianco dopo lo sviluppo."""
+    if not _valid_multipliers(wb):
+        return None
+    cam_from_xyz = np.asarray(raw.rgb_xyz_matrix, dtype=float)[:3]
+    if not np.any(cam_from_xyz) and _valid_multipliers(daylight):
+        # Alcuni file (es. molti DNG) danno solo la matrice fotocamera -> sRGB già normalizzata da
+        # LibRaw (righe di inv(rgb_cam) a somma 1): la si riporta allo spazio del sensore con i
+        # moltiplicatori della luce del giorno, che LibRaw ricava proprio da quella normalizzazione.
+        rgb_cam = np.asarray(raw.color_matrix, dtype=float)[:3, :3]
+        if abs(np.linalg.det(rgb_cam)) > 1e-12:
+            cam_from_xyz = np.diag(1.0 / daylight[:3]) @ np.linalg.inv(rgb_cam) @ SRGB_FROM_XYZ
+    if not np.any(cam_from_xyz) or abs(np.linalg.det(cam_from_xyz)) < 1e-12:
+        return None
+    return ColorInfo(
+        cam_from_xyz=cam_from_xyz,
+        base=wb[:3] / wb[1],
+        daylight=daylight[:3] / daylight[1] if _valid_multipliers(daylight) else None,
+        is_raw=True,
+    )
 
 
 def decode_raw(path: Path, develop: DevelopSettings | None = None, measure_noise: bool = True) -> ImageData:
@@ -96,19 +123,15 @@ def decode_raw(path: Path, develop: DevelopSettings | None = None, measure_noise
             # pixel dell'immagine e pixel del sensore per il denoise di livello 3.
             user_flip=0,
         )
+        # Lo sviluppo usa sempre il bilanciamento dello scatto: quello scelto dall'utente è una correzione
+        # esatta applicata dopo (vedi develop.py), istantanea invece di un nuovo sviluppo.
         cam_wb = np.asarray(raw.camera_whitebalance[:3], dtype=float)
-        if develop.wb_mode == "camera":
+        daylight = np.asarray(raw.daylight_whitebalance[:3], dtype=float)
+        if _valid_multipliers(cam_wb):
             params["use_camera_wb"] = True
             wb = cam_wb
-        elif develop.wb_mode == "auto":
-            params["use_auto_wb"] = True
-            wb = None
-        elif develop.wb_mode == "custom":
-            r, g, b = develop.wb_custom
-            params["user_wb"] = [float(r), float(g), float(b), float(g)]
-            wb = np.array([r, g, b], dtype=float)
-        else:  # luce diurna: moltiplicatori derivati dalla matrice colore
-            wb = np.asarray(raw.daylight_whitebalance[:3], dtype=float)
+        else:  # nessun bilanciamento registrato: LibRaw usa quello per la luce del giorno
+            wb = daylight
 
         def develop_linear() -> np.ndarray:
             return raw.postprocess(**params).astype(np.float32) / 65535.0
@@ -117,6 +140,7 @@ def decode_raw(path: Path, develop: DevelopSettings | None = None, measure_noise
             pixels = develop_linear()
         except _UNSUPPORTED_ERRORS as exc:
             raise RawNotSupportedError(f"LibRaw non riesce a sviluppare il file ({exc.__class__.__name__}).") from exc
+        color = _color_info(raw, wb, daylight)  # dopo lo sviluppo LibRaw ha calcolato tutte le matrici
         cfa = _cfa_pattern(raw)
         sensor_shape = raw.raw_image_visible.shape
         profile = None
@@ -146,6 +170,7 @@ def decode_raw(path: Path, develop: DevelopSettings | None = None, measure_noise
         bits_per_sample=16,
         wb_multipliers=wb_tuple,
         cfa_pattern=cfa,
+        color=color,
     )
     return ImageData(
         pixels=pixels, domain=Domain.LINEAR, meta=meta, noise_profile=profile, raw_source=raw_source

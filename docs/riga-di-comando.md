@@ -53,7 +53,8 @@ denoiser-cli elabora D:\Foto\Notte --preset "Notturne Z5"
 | Opzione | Significato |
 |---|---|
 | `--livello 3` / `--livello 2` | Denoise sui dati del sensore (predefinito) o dopo lo sviluppo |
-| `--bilanciamento` | `camera` (come scattato), `auto`, `daylight`, `custom` |
+| `--bilanciamento` | `camera` (come scattato), `auto`, `daylight`, `temperature`, `custom` |
+| `--temperatura K`, `--tinta T` | Temperatura (2000–15000 K) e tinta (−150…150) della luce (implicano `temperature`) |
 | `--moltiplicatori R G B` | Moltiplicatori del bilanciamento (implica `custom`) |
 | `--demosaic` | `AHD` (predefinito), `AAHD`, `DCB`, `DHT`, `PPG`, `VNG`, `LINEAR` |
 | `--esposizione EV` | Correzione di esposizione |

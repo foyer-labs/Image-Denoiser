@@ -10,8 +10,12 @@ WB_MODES: dict[str, str] = {
     "camera": "Come scattato (consigliato)",
     "auto": "Automatico",
     "daylight": "Luce diurna",
-    "custom": "Personalizzato",
+    "temperature": "Personalizzato",
+    "custom": "Moltiplicatori R / G / B",
 }
+
+#: Curva dei toni che non cambia nulla.
+IDENTITY_CURVE: tuple[tuple[float, float], ...] = ((0.0, 0.0), (1.0, 1.0))
 
 #: Algoritmi di demosaicizzazione offerti (tutti disponibili nelle build standard di rawpy).
 DEMOSAIC_ALGORITHMS: dict[str, str] = {
@@ -45,6 +49,9 @@ class DevelopSettings:
     wb_mode: str = "camera"
     #: Moltiplicatori R, G, B usati con wb_mode == "custom".
     wb_custom: tuple[float, float, float] = (2.0, 1.0, 1.5)
+    #: Temperatura (K) e tinta della luce, usate con wb_mode == "temperature".
+    temperature: float = 5500.0
+    tint: float = 0.0
     demosaic: str = "AHD"
 
 
@@ -69,10 +76,18 @@ class DenoiseSettings:
 
 @dataclass
 class ToneSettings:
-    """Resa tonale minima per i RAW (i JPG/PNG non vengono toccati)."""
+    """Esposizione e toni. I cursori vanno da −100 a +100 (0 = nessun effetto), come in Lightroom."""
 
+    #: Luminosità automatica dei RAW (come farebbe la fotocamera).
     auto_brightness: bool = True
     exposure_ev: float = 0.0
+    contrast: float = 0.0
+    brightness: float = 0.0
+    highlights: float = 0.0
+    shadows: float = 0.0
+    saturation: float = 0.0
+    #: Punti (x, y) in [0, 1] della curva dei toni, da sinistra a destra.
+    curve: tuple[tuple[float, float], ...] = IDENTITY_CURVE
 
 
 @dataclass
@@ -131,7 +146,26 @@ def _choices() -> dict[str, Any]:
 _RANGES: dict[str, tuple[float, float]] = {
     "luma_strength": (0.0, 10.0), "chroma_strength": (0.0, 10.0), "detail": (0.0, 1.0),
     "hot_pixel_threshold": (0.0, 100.0), "exposure_ev": (-10.0, 10.0), "jpeg_quality": (1, 100),
+    "temperature": (2000.0, 15000.0), "tint": (-150.0, 150.0),
+    "contrast": (-100.0, 100.0), "brightness": (-100.0, 100.0), "highlights": (-100.0, 100.0),
+    "shadows": (-100.0, 100.0), "saturation": (-100.0, 100.0),
 }
+
+#: Numero massimo di punti della curva dei toni.
+MAX_CURVE_POINTS = 16
+
+
+def _coerce_curve(value: Any) -> tuple[tuple[float, float], ...]:
+    points = []
+    for point in value:
+        x, y = (float(str(v).replace(",", ".")) for v in point)
+        if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
+            raise ValueError("curve")
+        points.append((x, y))
+    points.sort()
+    if not 2 <= len(points) <= MAX_CURVE_POINTS:
+        raise ValueError("curve")
+    return tuple(points)
 
 
 def _coerce(name: str, value: Any, default: Any) -> Any:
@@ -159,6 +193,8 @@ def _coerce(name: str, value: Any, default: Any) -> Any:
         if not isinstance(value, str):
             raise ValueError(name)
         return value
+    if name == "curve":
+        return _coerce_curve(value)
     if isinstance(default, tuple):  # wb_custom
         values = tuple(float(str(x).replace(",", ".")) for x in value)
         if len(values) != len(default) or any(not (0.01 <= x <= 100) for x in values):

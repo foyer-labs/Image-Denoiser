@@ -5,6 +5,34 @@ Tutte le modifiche rilevanti, dalla più recente. Formato ispirato a
 
 ## [Non rilasciato]
 
+## [0.13.0] - 2026-10-18
+
+### Aggiunto
+
+- Pannello **Sviluppo** per RAW, JPG, PNG e TIFF: **curva dei toni** modificabile con il mouse sopra
+  l'**istogramma** RGB (aggiornato a ogni regolazione, con avviso di ombre e alte luci tagliate);
+  bilanciamento del bianco con **Temperatura**, **Tinta** e **Contagocce**; **Esposizione**,
+  **Contrasto**, **Luminosità**, **Alte luci** (recupero delle zone quasi bruciate dei RAW), **Ombre** e
+  **Saturazione**.
+- **Regolazioni di ogni foto**: sviluppo e riduzione del rumore vengono ricordati per ciascuna foto, in
+  un file accanto (`DSC_0001.NEF.denoiser`); nel carosello le foto regolate hanno un punto giallo.
+  Con **Applica le modifiche a tutte le selezionate** una regolazione cambiata sulla foto aperta vale
+  anche per le altre selezionate (raffiche). Annulla e ripeti valgono per ogni foto.
+- **Esporta selezionate** usa le regolazioni di ciascuna foto; il metodo si può ancora imporre a tutte.
+- Nei **DNG** il bilanciamento scelto diventa l'AsShotNeutral del file e i toni (contrasto, alte luci,
+  ombre, saturazione, curva) impostazioni di Lightroom/Camera Raw.
+- Riga di comando: `--temperatura` e `--tinta` per il bilanciamento. Le regolazioni salvate per ogni foto
+  valgono nell'interfaccia; la riga di comando usa quelle indicate o un preset.
+
+### Modificato
+
+- Il bilanciamento del bianco non risviluppa più il RAW: è una correzione esatta nei colori della
+  fotocamera, istantanea. Il RAW viene risviluppato solo cambiando la ricostruzione dei colori.
+- La sezione «Sviluppo RAW» diventa «Sviluppo» (per tutte le foto) e «RAW» (ricostruzione dei colori,
+  DNG Converter); i valori R / G / B del bilanciamento lasciano il posto a temperatura e tinta.
+- Esportando un DNG, ExifTool non copia più dall'originale bilanciamento, esposizione di base e
+  impostazioni di Camera Raw, che vengono dalle regolazioni.
+
 ## [0.12.0] - 2026-10-18
 
 ### Aggiunto
@@ -171,7 +199,8 @@ Codice distribuito con licenza MIT.
 - Correzioni di memoria, concorrenza, cache e gestione degli errori; registro degli errori in
   `%LOCALAPPDATA%\Denoiser\errori.log`.
 
-[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.12.0...HEAD
+[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.0...v0.11.1

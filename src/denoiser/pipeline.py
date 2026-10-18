@@ -23,6 +23,7 @@ from . import vst
 from .bayer import develop_denoised, display_rect_to_sensor, orient
 from .algorithms import get_algorithm
 from .color import opponent_to_rgb, rgb_to_opponent, srgb_decode, srgb_encode
+from .develop import ColorInfo, ToneParams, render_tone
 from .hotpixel import remove_hot_pixels
 from .image import Domain, ImageData
 from .joint import joint_denoise
@@ -48,6 +49,17 @@ class Analysis:
     component_sigma: np.ndarray
     #: Guadagno della luminosità automatica (solo RAW).
     brightness_gain: float = 1.0
+    #: Colori della foto per il bilanciamento del bianco (None: bilanciamento non modificabile).
+    color: ColorInfo | None = None
+    #: Valore lineare più alto della foto (99,95° percentile, prima dell'esposizione): fin dove arriva
+    #: il recupero delle alte luci.
+    headroom: float = 1.0
+    #: Rapporto dei moltiplicatori del bilanciamento automatico.
+    auto_wb: np.ndarray | None = None
+
+    def tone_params(self) -> ToneParams:
+        color = self.color if self.color is not None else ColorInfo.for_display()
+        return ToneParams(color=color, auto_gain=self.brightness_gain, headroom=self.headroom, auto_wb=self.auto_wb)
 
     def describe(self) -> str:
         y, c1, c2 = self.component_sigma
@@ -80,13 +92,33 @@ def analyze(image: ImageData, max_pixels: int = 4_000_000) -> Analysis:
         work_tiles = [rgb_to_opponent(t) for t in tiles]
         channel_sigma = np.array([estimate_sigma([t[..., c] for t in tiles]) for c in range(3)])
         component_sigma = np.array([estimate_sigma([t[..., i] for t in work_tiles]) for i in range(3)])
+    color = image.meta.color if image.domain is Domain.LINEAR else ColorInfo.for_display()
+    headroom, auto_wb = _light_statistics(tiles, image.domain, color)
     return Analysis(
         domain=image.domain,
         noise_model=model,
         channel_sigma=channel_sigma,
         component_sigma=component_sigma,
         brightness_gain=gain,
+        color=color,
+        headroom=headroom,
+        auto_wb=auto_wb,
     )
+
+
+def _light_statistics(tiles: list[np.ndarray], domain: Domain, color: ColorInfo | None) -> tuple[float, np.ndarray | None]:
+    """Luce più alta della foto e bilanciamento automatico (media dei grigi, senza zone bruciate o nere)."""
+    lin = [t if domain is Domain.LINEAR else srgb_decode(t) for t in tiles]
+    peak = np.concatenate([t.max(axis=2).ravel() for t in lin])
+    headroom = float(max(np.percentile(peak, 99.95), 1e-6)) if peak.size else 1.0
+    if color is None or not peak.size:
+        return headroom, None
+    pixels = np.concatenate([t.reshape(-1, 3) for t in lin])
+    top = pixels.max(axis=1)
+    usable = (top < 0.95) & (top > 0.02 * max(headroom, 1e-6))
+    if usable.sum() < 100:
+        return headroom, None
+    return headroom, color.gray_world(pixels[usable].mean(axis=0))
 
 
 def render(
@@ -238,11 +270,8 @@ def _noise_std_fn(analysis: Analysis) -> Callable[[np.ndarray, int], np.ndarray]
 
 
 def _tone(work: np.ndarray, domain: Domain, analysis: Analysis, settings: Settings) -> np.ndarray:
-    if domain is Domain.DISPLAY:
-        return np.clip(work, 0.0, 1.0).astype(np.float32)
-    gain = analysis.brightness_gain if settings.tone.auto_brightness else 1.0
-    gain *= 2.0 ** settings.tone.exposure_ev
-    return srgb_encode(work * gain)
+    """Sviluppo (bilanciamento, esposizione, toni, curva, saturazione) e codifica sRGB."""
+    return render_tone(work, domain is Domain.LINEAR, analysis.tone_params(), settings.develop, settings.tone)
 
 
 def process_image(

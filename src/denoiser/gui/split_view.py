@@ -69,6 +69,8 @@ class SplitView(QWidget):
     zoomChanged = Signal(float)
     hintClicked = Signal()
     modeChanged = Signal(str)
+    #: Contagocce: punto cliccato in coordinate dell'immagine.
+    imagePicked = Signal(float, float)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -90,6 +92,7 @@ class SplitView(QWidget):
         self._mode = "split"
         self._peek = False  # Spazio tenuto premuto: si vede l'originale
         self._original_only = False  # riduzione del rumore non ancora applicata: si vede solo l'originale
+        self._pick_mode = False  # contagocce del bilanciamento del bianco
         self._drag_mode: str | None = None
         self._drag_start = QPointF()
         self._offset_start = QPointF()
@@ -216,6 +219,15 @@ class SplitView(QWidget):
     @property
     def original_only(self) -> bool:
         return self._original_only
+
+    def set_pick_mode(self, on: bool) -> None:
+        """Contagocce: un clic sulla foto emette :attr:`imagePicked` invece di spostarla."""
+        self._pick_mode = on
+        self.setCursor(Qt.CursorShape.CrossCursor if on else Qt.CursorShape.OpenHandCursor)
+
+    @property
+    def pick_mode(self) -> bool:
+        return self._pick_mode
 
     # ------------------------------------------------------------------ zoom
 
@@ -478,6 +490,12 @@ class SplitView(QWidget):
         if event.button() != Qt.MouseButton.LeftButton or self._base is None:
             return
         pos = event.position()
+        if self._pick_mode:
+            s = self._scale()
+            x, y = (pos.x() - self._offset.x()) / s, (pos.y() - self._offset.y()) / s
+            if 0 <= x < self._base.width() and 0 <= y < self._base.height():
+                self.imagePicked.emit(x, y)
+            return
         if self._hint_clickable and self._hint_rect.contains(pos):
             self.hintClicked.emit()
             return
@@ -496,7 +514,7 @@ class SplitView(QWidget):
             self._offset = self._offset_start + (pos - self._drag_start)
             self._clamp_offset()
             self.update()
-        elif self._base is not None:
+        elif self._base is not None and not self._pick_mode:
             near = self._near_handle(pos.x())
             if near != self._hover_handle:
                 self._hover_handle = near
@@ -510,7 +528,7 @@ class SplitView(QWidget):
         if self._drag_mode == "pan":
             self._emit_viewport()
         self._drag_mode = None
-        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.setCursor(Qt.CursorShape.CrossCursor if self._pick_mode else Qt.CursorShape.OpenHandCursor)
 
     def mouseDoubleClickEvent(self, event) -> None:
         """Doppio clic: 100% nel punto cliccato, oppure di nuovo adatta alla finestra."""

@@ -5,15 +5,18 @@ from __future__ import annotations
 import json
 import os
 import uuid
+
+import numpy as np
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
 from .algorithms import get_algorithm
 from .bayer import denoised_sensor_data
+from .develop import camera_raw_xmp, target_multipliers, wb_matrix, wb_ratio
 from .image import Domain, ImageData
 from .io import load_image, save_image
-from .io.dng import write_bayer_dng, write_linear_dng
+from .io.dng import neutral_from_multipliers, write_bayer_dng, write_linear_dng
 from .io.formats import is_supported, kind_of
 from .io.metadata import copy_metadata
 from .io.naming import output_path, unique_path
@@ -145,6 +148,10 @@ def _export_dng(
         raise ValueError("Il formato DNG è disponibile solo per le foto RAW: scegli TIFF, PNG o JPEG.")
     make, model = image.meta.make, image.meta.model
     exposure = settings.tone.exposure_ev
+    # Il RAW resta da sviluppare: toni e curva diventano istruzioni per Camera Raw, il bilanciamento
+    # l'AsShotNeutral (o, nel DNG lineare, una correzione già applicata ai colori).
+    xmp = camera_raw_xmp(settings.tone)
+    color = analysis.color
     if uses_sensor_stage(image, settings):
         # Livello 3: si salvano i dati del sensore ripuliti, il fotoritocco farà il resto.
         src = image.raw_source
@@ -154,10 +161,18 @@ def _export_dng(
         sensor = denoised_sensor_data(
             src.data, src.sensor_model, get_algorithm(ds.algorithm), ds, src.flip, denoise=active, progress=progress
         )
+        if color is not None and settings.develop.wb_mode != "camera":
+            sensor.camera_neutral = neutral_from_multipliers(
+                target_multipliers(settings.develop, color, analysis.auto_wb))
         # L'esposizione di base del DNG d'origine (es. da Adobe DNG Converter) va conservata.
-        return write_bayer_dng(destination, sensor, make, model, exposure + sensor.source_baseline_exposure, description)
+        return write_bayer_dng(destination, sensor, make, model, exposure + sensor.source_baseline_exposure,
+                               description, xmp)
     linear = denoise_region(image, analysis, settings, progress=progress)
-    return write_linear_dng(destination, linear, make, model, exposure, description)
+    if color is not None:
+        matrix = wb_matrix(wb_ratio(settings.develop, color, analysis.auto_wb), color)
+        if matrix is not None:
+            linear = linear @ matrix.T.astype(np.float32)
+    return write_linear_dng(destination, linear, make, model, exposure, description, xmp)
 
 
 #: Cosa fare quando il file di uscita esiste già (esportazione di più foto).

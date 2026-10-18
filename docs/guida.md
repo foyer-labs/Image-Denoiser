@@ -7,7 +7,7 @@
 - [Guardare il risultato](#guardare-il-risultato)
 - [Regolare la riduzione del rumore](#regolare-la-riduzione-del-rumore)
 - [Reti neurali (IA)](#reti-neurali-ia)
-- [Sviluppo dei RAW](#sviluppo-dei-raw)
+- [Sviluppare la foto](#sviluppare-la-foto)
 - [Salvare](#salvare)
 - [Esportare più foto](#esportare-più-foto)
 - [Preset](#preset)
@@ -161,19 +161,53 @@ DRUNet, SCUNet, Restormer e RawNIND sono reti neurali che girano interamente sul
   poco. «Dopo lo sviluppo» serve per i sensori non Bayer (per esempio Fujifilm X-Trans), dove è
   l'unica possibilità. Ogni preset predefinito riporta questa impostazione su «Prima dello sviluppo». **SCUNet** resta indicata per JPG e smartphone.
 
-## Sviluppo dei RAW
+## Sviluppare la foto
 
-Il pannello **Sviluppo RAW** decide come i dati del sensore diventano un'immagine a colori:
+![Pannello Sviluppo con curva, istogramma e bilanciamento](screenshots/11-sviluppo.png)
 
-- **Bilanciamento del bianco**: *come scattato* (consigliato), automatico, luce diurna oppure personalizzato con i
-  moltiplicatori R / G / B (partono da quelli dello scatto).
-- **Ricostruzione colori**: algoritmo di demosaicizzazione (AHD consigliato).
-- **Luminosità automatica** ed **Esposizione** in EV: valgono per anteprima e file salvati in
-  TIFF, PNG o JPEG. Nel DNG l'esposizione viene registrata come impostazione, senza toccare i dati.
+Il pannello **Sviluppo** regola colori e toni di RAW, JPG, PNG e TIFF. Le regolazioni si vedono
+subito sulla foto, anche prima di applicare la riduzione del rumore.
+
+- **Curva e istogramma**: l'istogramma mostra quanti pixel ci sono per ogni livello, dalle ombre
+  (a sinistra) alle alte luci (a destra), in rosso, verde e blu, e si aggiorna a ogni regolazione.
+  Sopra c'è la **curva dei toni**: clic per aggiungere un punto, trascina per spostarlo, doppio clic
+  (o trascinarlo fuori dal riquadro) per toglierlo. Alzare la curva schiarisce quei toni, abbassarla
+  li scurisce; i punti agli estremi alzano il nero o abbassano il bianco. I triangoli in alto si
+  accendono quando ombre o alte luci sono tagliate. *Curva lineare* toglie tutti i punti.
+- **Bilanciamento del bianco**: *come scattato* (consigliato), *automatico*, *luce diurna* (solo RAW)
+  o **Temperatura** in kelvin e **Tinta**: muovendole si passa a *Personalizzato*. Con il
+  **Contagocce** fai clic su qualcosa che dovrebbe essere grigio o bianco e il bilanciamento lo rende
+  neutro (`Esc` per annullare). Nei JPG il punto di partenza è 6500 K, la luce del giorno.
+- **Esposizione** in EV e, per i RAW, **Luminosità automatica**.
+- **Contrasto**, **Luminosità** (i mezzitoni), **Alte luci**, **Ombre** e **Saturazione**, da −100 a
+  +100 (0 = nessun effetto). *Alte luci* verso − recupera il dettaglio nelle zone quasi bruciate dei
+  RAW; *Ombre* verso + schiarisce le zone scure (e rende più visibile il rumore che vi rimane).
+
+*Ripristina lo sviluppo* riporta tutto ai valori di partenza. Toni e curva valgono allo stesso modo
+su tutta la foto, quindi l'anteprima di una zona coincide sempre con il file esportato.
+
+### Le regolazioni di ogni foto
+
+Ogni foto ricorda le **sue** regolazioni: sviluppo e riduzione del rumore. Vengono salvate in un
+piccolo file accanto alla foto, `DSC_0001.NEF.denoiser`, con un nome diverso da quelli di Lightroom e
+darktable, che restano intatti. Se la cartella non è scrivibile (per esempio una scheda protetta), il
+file va nella cartella dei dati dell'app. Nel carosello le foto regolate hanno un **punto giallo**.
+
+Una foto mai regolata parte dai valori consigliati per lo sviluppo e dal metodo di riduzione del
+rumore usato per ultimo. Annulla e ripeti valgono per la foto aperta.
+
+**Per le raffiche**: seleziona le foto nel carosello e attiva **Applica le modifiche a tutte le
+selezionate**. Da quel momento ogni regolazione che cambi sulla foto aperta (per esempio
+l'esposizione) viene copiata anche sulle altre selezionate; tutto il resto resta quello di ciascuna.
+
+### RAW
+
+- **Ricostruzione colori**: algoritmo di demosaicizzazione (AHD consigliato). Cambiandola la foto
+  viene risviluppata: se esporti subito, il salvataggio parte appena il nuovo sviluppo è pronto.
 - **DNG Converter**: uso automatico di Adobe DNG Converter per i RAW che LibRaw non legge.
 
-Dopo un cambio di bilanciamento o di ricostruzione la foto viene risviluppata: se esporti
-subito, il salvataggio parte appena il nuovo sviluppo è pronto.
+Il bilanciamento non richiede un nuovo sviluppo: è una correzione esatta nei colori della
+fotocamera, applicata all'istante.
 
 ## Salvare
 
@@ -187,6 +221,13 @@ subito, il salvataggio parte appena il nuovo sviluppo è pronto.
   che Lightroom, darktable, Capture One e simili sviluppano come l'originale. NEF, CR3, ARW e gli
   altri RAW delle fotocamere sono formati chiusi che nessun programma esterno può scrivere: per
   riesportare un RAW si usa il DNG, che si crea solo da foto RAW.
+
+Nel **DNG** il RAW resta da sviluppare: il bilanciamento del bianco diventa quello «come scattato»
+del file, che rispettano tutti i programmi, e l'esposizione la sua esposizione di base. Contrasto,
+alte luci, ombre, saturazione e curva diventano **impostazioni di Lightroom/Camera Raw**: aprendo il
+DNG in Lightroom o Photoshop le ritrovi già applicate e modificabili. Altri programmi (darktable,
+Capture One) ne leggono solo una parte, e il risultato di Lightroom è simile ma non identico a quello
+di Denoiser, che usa formule proprie.
 
 ![Finestra di esportazione](screenshots/10-esporta.png)
 
@@ -223,8 +264,10 @@ cartella e stesso formato) al nome si aggiunge `_1`.
 4. **Esporta**. In basso vedi la foto in corso e il tempo stimato per tutte; **Interrompi** (`Esc`)
    si ferma senza lasciare file a metà.
 
-Tutte le foto usano il metodo scelto e le regolazioni del pannello: con «Grana» e «Macchie di colore»
-a 1 ognuna perde esattamente il rumore misurato su di sé. Ogni file tiene il nome dell'originale; se
+Ogni foto viene esportata con le **sue** regolazioni (sviluppo e riduzione del rumore). Il campo
+*Metodo* lascia di norma *Quello di ogni foto*; scegliendo un metodo, lo si usa per tutte con i suoi
+valori consigliati. Con «Grana» e «Macchie di colore» a 1 ogni foto perde esattamente il rumore
+misurato su di sé. Ogni file tiene il nome dell'originale; se
 due foto darebbero lo stesso nome (es. `IMG_1.NEF` e `IMG_1.JPG` in TIFF) la seconda diventa `IMG_1_1`.
 
 Se scegli il **DNG** e tra le foto ci sono JPG, PNG o TIFF, compare *Foto non RAW*: scegli in che
@@ -269,7 +312,7 @@ salvataggio). Da *Preset* puoi eliminare i tuoi preset o aprirne la cartella.
 | `Spazio` (tenuto) | Mostra l'originale |
 | `\` | Tendina → solo dopo → solo prima → rumore tolto |
 | Doppio clic su un cursore | Valore consigliato |
-| `Esc` | Interrompe l'operazione in corso |
+| `Esc` | Interrompe l'operazione in corso o il contagocce |
 | `F1` | Guida e scorciatoie |
 
 ## Domande frequenti

@@ -10,6 +10,7 @@ from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QCheckBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -25,7 +26,8 @@ from PySide6.QtWidgets import (
 )
 
 from ..io.thumbnail import make_thumbnail
-from .style import ACCENT, PRIMARY, TEXT_DIM
+from ..sidecar import has_settings
+from .style import ACCENT, PRIMARY, TEXT_DIM, WARN
 from .workers import Task
 
 #: Lato lungo delle miniature, in pixel logici (calcolate al doppio per gli schermi ad alta densità).
@@ -92,6 +94,10 @@ class _Delegate(QStyledItemDelegate):
             p.setPen(pen)
             c = badge.center()
             p.drawPolyline([c + QPointF(-4.5, 0.5), c + QPointF(-1, 4), c + QPointF(4.5, -3.5)])
+        if index.data(_PATH) in self._strip.edited:  # regolazioni salvate per questa foto
+            p.setPen(QPen(QColor(20, 20, 20), 2))
+            p.setBrush(QColor(WARN))
+            p.drawEllipse(QRectF(thumb_area.left() + 5, thumb_area.bottom() - 17, 12, 12))
         if shown:
             p.setPen(QPen(QColor(ACCENT), 2))
             p.setBrush(Qt.BrushStyle.NoBrush)
@@ -125,6 +131,8 @@ class Filmstrip(QFrame):
         self._run = run
         self._folder: Path | None = None
         self._shown = ""
+        #: Foto con regolazioni salvate (segnate da un punto giallo).
+        self.edited: set[str] = set()
         self._generation = 0
         self._queue: list[QListWidgetItem] = []
         self._activate_timer = QTimer(self, singleShot=True, interval=180)
@@ -149,6 +157,14 @@ class Filmstrip(QFrame):
         self.select_none.clicked.connect(self._select_shown_only)
         header.addWidget(self.select_all)
         header.addWidget(self.select_none)
+        self.sync = QCheckBox("Applica le modifiche a tutte le selezionate")
+        self.sync.setToolTip(
+            "Per le raffiche: ogni regolazione che cambi sulla foto aperta (esposizione, bilanciamento, toni, "
+            "riduzione del rumore…) viene copiata anche sulle altre foto selezionate. Le altre regolazioni di "
+            "ciascuna foto restano le sue."
+        )
+        self.sync.hide()
+        header.addWidget(self.sync)
         self._header = header
         close = QToolButton()
         close.setText("✕")
@@ -188,6 +204,7 @@ class Filmstrip(QFrame):
         self._queue = []
         self._folder = folder
         self.list.clear()
+        self.edited = {str(p) for p in paths if has_settings(p)}
         for p in paths:
             item = QListWidgetItem(p.name)
             item.setData(_PATH, str(p))
@@ -208,6 +225,14 @@ class Filmstrip(QFrame):
         """Foto selezionate, nell'ordine del carosello."""
         return [Path(self.list.item(i).data(_PATH)) for i in range(self.list.count())
                 if self.list.item(i).isSelected()]
+
+    def set_edited(self, paths, edited: bool = True) -> None:
+        for path in paths:
+            (self.edited.add if edited else self.edited.discard)(str(path))
+        self.list.viewport().update()
+
+    def sync_enabled(self) -> bool:
+        return not self.sync.isHidden() and self.sync.isChecked()
 
     def contains(self, path: Path) -> bool:
         return self._item_for(path) is not None
@@ -284,11 +309,12 @@ class Filmstrip(QFrame):
     def _update_title(self) -> None:
         count = self.list.count()
         selected = len(self.list.selectedItems())
+        self.sync.setVisible(selected > 1)
         where = self._folder.name if self._folder is not None else "Foto aperte"
         parts = [f"<b>{where}</b>", f"{count} foto"]
         if selected:
             parts.append(f"{selected} selezionat{'a' if selected == 1 else 'e'}")
-        hint = "<span style='color:#9a9a9a'>clic: apri · Ctrl+clic o Maiusc+clic: seleziona più foto</span>"
+        hint = "<span style='color:#9a9a9a'>clic: apri · Ctrl+clic, Maiusc+clic: più foto · ● regolata</span>"
         self.title.setText(" · ".join(parts) + " &nbsp; " + hint)
         if self._folder is not None:
             self.title.setToolTip(str(self._folder))

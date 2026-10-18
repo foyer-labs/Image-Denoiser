@@ -33,6 +33,9 @@ Nessun abbonamento, nessun caricamento nel cloud: la foto non lascia mai il PC.
   di non perdere dettaglio; con la foto rimpicciolita, risultato calcolato sulla **foto intera**.
 - **Salva in TIFF, PNG, JPEG o DNG**, conservando metadati (EXIF, GPS, parole chiave…) e profilo colore.
   Il DNG ripulito si apre in Lightroom, darktable e simili come un RAW.
+- **Sviluppa la foto**: curva dei toni sopra l'istogramma, bilanciamento del bianco (temperatura,
+  tinta, contagocce), esposizione, contrasto, luminosità, alte luci, ombre e saturazione. Ogni foto
+  ricorda le sue regolazioni, che si possono applicare a un'intera raffica.
 - **Apre intere cartelle** in un carosello di miniature: scorri le foto, selezionane quante vuoi ed
   esportale tutte insieme, scegliendo metodo, cartella e formato.
 

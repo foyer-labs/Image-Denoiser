@@ -17,8 +17,10 @@ from .. import __version__
 ENV_VAR = "DENOISER_EXIFTOOL"
 
 # Tag da non copiare: l'orientamento è già applicato o scritto da noi, la descrizione
-# contiene le impostazioni di denoise, le anteprime incorporate non corrispondono più.
-_EXCLUDED = ("Orientation", "ImageDescription", "ThumbnailImage", "PreviewImage", "JpgFromRaw", "OtherImage")
+# contiene le impostazioni di denoise, le anteprime incorporate non corrispondono più. Bilanciamento,
+# esposizione di base e impostazioni di Camera Raw dei DNG li scrive Denoiser dalle regolazioni.
+_EXCLUDED = ("Orientation", "ImageDescription", "ThumbnailImage", "PreviewImage", "JpgFromRaw", "OtherImage",
+             "AsShotNeutral", "BaselineExposure", "XMP-crs:all")
 
 
 def _bundled_candidates() -> list[Path]:

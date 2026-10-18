@@ -5,10 +5,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
-    QAbstractSpinBox,
     QCheckBox,
     QComboBox,
-    QDoubleSpinBox,
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
@@ -25,6 +23,7 @@ from PySide6.QtWidgets import (
 from ..algorithms import ALGORITHMS, get_algorithm
 from ..io.naming import PLACEHOLDERS
 from ..settings import DEMOSAIC_ALGORITHMS, OUTPUT_FORMATS, RAW_STAGES, WB_MODES, Settings
+from .curve_editor import CurveEditor
 from .style import OK, WARN, icon
 from .widgets import (
     ExplainFilter,
@@ -51,6 +50,21 @@ _FORMAT_TIPS = {
 }
 
 
+_EMPTY_CONTEXT = {"has_image": False, "is_raw": False, "is_bayer": False, "wb_equivalents": {}}
+
+#: Cursori dei toni: (campo di ToneSettings, etichetta, spiegazione).
+_TONE_CONTROLS = (
+    ("contrast", "Contrasto", "Più contrasto: ombre più scure e luci più chiare, il grigio medio resta fermo. "
+                              "Meno contrasto: un aspetto più morbido."),
+    ("brightness", "Luminosità", "Schiarisce o scurisce i mezzitoni, lasciando fermi il nero e il bianco."),
+    ("highlights", "Alte luci", "Verso −: recupera il dettaglio nelle zone molto chiare (cielo, nuvole, finestre), "
+                                "anche quelle quasi bruciate dei RAW. Verso +: le rende più luminose."),
+    ("shadows", "Ombre", "Verso +: schiarisce le zone scure facendone emergere il dettaglio (anche il rumore). "
+                         "Verso −: le rende più profonde."),
+    ("saturation", "Saturazione", "Intensità dei colori: −100 = bianco e nero."),
+)
+
+
 def _hot_threshold(decision: float) -> float:
     """«Decisione» 1..10 (più alto = più deciso) -> soglia in multipli del rumore (12..3)."""
     return round(13.0 - decision, 1)
@@ -73,14 +87,15 @@ class SettingsPanel(QWidget):
     dngConverterReset = Signal()
     useDngConverterToggled = Signal(bool)
     applyRequested = Signal()
+    #: Contagocce del bilanciamento: True = scegli un punto neutro nella foto.
+    wbPickToggled = Signal(bool)
 
     def __init__(self, settings: Settings):
         super().__init__()
         self._settings = Settings.from_dict(settings.to_dict())
         self._settings.output.overwrite = False  # mai ricordato tra una sessione e l'altra
         self._params_by_algorithm: dict[str, dict] = {self._settings.denoise.algorithm: dict(self._settings.denoise.params)}
-        self._ctx = {"has_image": False, "is_raw": False, "is_bayer": False, "shot_wb": None}
-        self._custom_wb_touched = False
+        self._ctx = _EMPTY_CONTEXT.copy()
 
         self.explain = QLabel(_EXPLAIN_DEFAULT)
         self.explain.setObjectName("explain")
@@ -93,6 +108,7 @@ class SettingsPanel(QWidget):
         layout.setContentsMargins(10, 4, 12, 10)
         layout.addWidget(self._build_photo())
         layout.addWidget(self._build_start())
+        layout.addWidget(self._build_develop())
         layout.addWidget(self._build_denoise())
         self.algo_box = QGroupBox()
         self.algo_box.setObjectName("sub")
@@ -258,46 +274,97 @@ class SettingsPanel(QWidget):
         self.set_applied(None)
         return box
 
-    def _build_raw(self) -> QGroupBox:
+    def _build_develop(self) -> QGroupBox:
         dv, tn = self._settings.develop, self._settings.tone
-        box = QGroupBox("SVILUPPO RAW")
-        self.raw_box = box
+        box = QGroupBox("SVILUPPO")
         form = make_form(box)
-        self.raw_hint = hint_label()
-        form.addRow(self.raw_hint)
+        self.develop_hint = hint_label()
+        form.addRow(self.develop_hint)
+
+        self.curve = CurveEditor()
+        self.curve.set_points(tn.curve)
+        self.curve.curveChanged.connect(lambda _p: self.toneChanged.emit())
+        self.curve.curveEdited.connect(lambda _p: self.toneChanged.emit())
+        form.addRow(self.curve)
+        curve_reset = QPushButton("Curva lineare")
+        curve_reset.setObjectName("link")
+        curve_reset.setToolTip("Toglie tutti i punti della curva dei toni.")
+        curve_reset.clicked.connect(self.curve.reset)
+        develop_reset = QPushButton("Ripristina lo sviluppo")
+        develop_reset.setObjectName("link")
+        develop_reset.setToolTip("Riporta bilanciamento, esposizione, toni, curva e saturazione ai valori di partenza.")
+        develop_reset.clicked.connect(self._reset_develop)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(curve_reset)
+        row.addStretch(1)
+        row.addWidget(develop_reset)
+        form.addRow(row)
 
         self.wb = make_combo(WB_MODES, dv.wb_mode)
         self.wb.setToolTip(
             "Corregge le dominanti di colore. «Come scattato» usa la scelta della fotocamera. «Automatico» la "
-            "ricalcola dalla foto. «Luce diurna» è tarato sul sole di mezzogiorno. «Personalizzato» attiva i tre "
-            "valori qui sotto."
+            "ricalcola dalla foto. «Luce diurna» è tarato sul sole di mezzogiorno. Muovendo Temperatura o Tinta "
+            "si passa a «Personalizzato»."
         )
         self.wb.currentIndexChanged.connect(self._on_wb)
-        form.addRow(form_label("Bilanciamento bianco"), self.wb)
-
-        self.wb_spins: list[QDoubleSpinBox] = []
+        self.pick_wb = QToolButton()
+        self.pick_wb.setText("Contagocce")
+        self.pick_wb.setCheckable(True)
+        self.pick_wb.setToolTip("Fai clic su qualcosa che dovrebbe essere grigio o bianco nella foto (un muro, un "
+                                "foglio, una nuvola): il bilanciamento lo rende neutro. Esc per annullare.")
+        self.pick_wb.toggled.connect(self.wbPickToggled)
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
-        for label, value in zip("RGB", dv.wb_custom):
-            spin = QDoubleSpinBox()
-            spin.setRange(0.1, 8.0)
-            spin.setSingleStep(0.05)
-            spin.setDecimals(2)
-            spin.setValue(value)
-            spin.setPrefix(f"{label} ")
-            spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-            spin.setKeyboardTracking(False)
-            guard_wheel(spin)
-            spin.valueChanged.connect(self._on_wb_values)
-            self.wb_spins.append(spin)
-            row.addWidget(spin)
+        row.addWidget(self.wb, 1)
+        row.addWidget(self.pick_wb)
         wb_row = QWidget()
         wb_row.setLayout(row)
-        wb_row.setToolTip(
-            "Quanto amplificare rosso, verde e blu (solo con «Personalizzato»). Alzare R scalda la foto, alzare B "
-            "la raffredda; G di solito resta 1. Partono dai valori dello scatto."
+        form.addRow(form_label("Bilanciamento bianco"), wb_row)
+
+        self.temperature = FloatControl(2000.0, 15000.0, 50.0, dv.temperature, decimals=0, default=5500.0,
+                                        center=5500.0, suffix=" K")
+        self.temperature.setToolTip(
+            "La luce della scena in kelvin: valori più alti scaldano la foto (più gialla), più bassi la raffreddano "
+            "(più blu). Lampadine 2700–3200 K, sole 5000–5500 K, ombra e cielo coperto 6500–8000 K."
         )
-        form.addRow(form_label("Valori R / G / B"), wb_row)
+        self.temperature.valueChanged.connect(self._on_wb_values)
+        form.addRow(form_label("Temperatura"), self.temperature)
+        self.tint = FloatControl(-150.0, 150.0, 1.0, dv.tint, decimals=0, default=0.0, center=0.0)
+        self.tint.setToolTip("Corregge le dominanti verdi (verso −) o magenta (verso +), ad esempio sotto luci al "
+                             "neon o tra le foglie.")
+        self.tint.valueChanged.connect(self._on_wb_values)
+        form.addRow(form_label("Tinta"), self.tint)
+
+        self.exposure = FloatControl(-5.0, 5.0, 0.05, tn.exposure_ev, default=0.0, center=0.0, suffix=" EV")
+        self.exposure.setToolTip(
+            "Schiarisce (+) o scurisce (−) in stop: +1 = doppio della luce, −1 = metà. Schiarire rende anche il "
+            "rumore più visibile."
+        )
+        self.exposure.valueChanged.connect(self.toneChanged)
+        form.addRow(form_label("Esposizione"), self.exposure)
+        self.auto_bright = QCheckBox("Luminosità automatica (RAW)")
+        self.auto_bright.setChecked(tn.auto_brightness)
+        self.auto_bright.setToolTip("Schiarisce il RAW come farebbe la fotocamera (le alte luci più forti restano intatte).")
+        self.auto_bright.toggled.connect(self.toneChanged)
+        form.addRow(form_label(""), self.auto_bright)
+
+        self.tone_controls: dict[str, FloatControl] = {}
+        for key, label, tip in _TONE_CONTROLS:
+            control = FloatControl(-100.0, 100.0, 1.0, getattr(tn, key), decimals=0, default=0.0, center=0.0)
+            control.setToolTip(tip)
+            control.valueChanged.connect(self.toneChanged)
+            form.addRow(form_label(label), control)
+            self.tone_controls[key] = control
+        return box
+
+    def _build_raw(self) -> QGroupBox:
+        dv = self._settings.develop
+        box = QGroupBox("RAW")
+        self.raw_box = box
+        form = make_form(box)
+        self.raw_hint = hint_label()
+        form.addRow(self.raw_hint)
 
         self.demosaic = make_combo(DEMOSAIC_ALGORITHMS, dv.demosaic)
         self.demosaic.setToolTip(
@@ -306,20 +373,6 @@ class SettingsPanel(QWidget):
         )
         self.demosaic.currentIndexChanged.connect(self.developChanged)
         form.addRow(form_label("Ricostruzione colori"), self.demosaic)
-
-        self.auto_bright = QCheckBox("Luminosità automatica")
-        self.auto_bright.setChecked(tn.auto_brightness)
-        self.auto_bright.setToolTip("Schiarisce il RAW come farebbe la fotocamera (le alte luci più forti restano intatte).")
-        self.auto_bright.toggled.connect(self.toneChanged)
-        form.addRow(form_label(""), self.auto_bright)
-
-        self.exposure = FloatControl(-3.0, 3.0, 0.1, tn.exposure_ev, default=0.0, center=0.0, suffix=" EV")
-        self.exposure.setToolTip(
-            "Schiarisce (+) o scurisce (−) in stop: +1 = doppio della luce, −1 = metà. Schiarire rende anche il "
-            "rumore più visibile."
-        )
-        self.exposure.valueChanged.connect(self.toneChanged)
-        form.addRow(form_label("Esposizione"), self.exposure)
 
         dng_tip = (
             "Programma gratuito di Adobe: serve solo per i RAW che questa app non sa ancora leggere (fotocamere "
@@ -474,18 +527,41 @@ class SettingsPanel(QWidget):
         self.denoiseChanged.emit()
 
     def _on_wb(self) -> None:
-        if self.wb.currentData() == "custom" and not self._custom_wb_touched and self._ctx["shot_wb"]:
-            # I valori personalizzati partono da quelli dello scatto: nessun salto di colore.
-            for spin, value in zip(self.wb_spins, self._ctx["shot_wb"]):
-                spin.blockSignals(True)
-                spin.setValue(value)
-                spin.blockSignals(False)
+        self._show_wb_equivalent()
         self._update_applicability()
-        self.developChanged.emit()
+        self.toneChanged.emit()
 
     def _on_wb_values(self) -> None:
-        self._custom_wb_touched = True
-        self.developChanged.emit()
+        """Temperatura o tinta mosse a mano: si passa a «Personalizzato»."""
+        if self.wb.currentData() != "temperature":
+            set_combo(self.wb, "temperature")
+        self.toneChanged.emit()
+
+    def _show_wb_equivalent(self) -> None:
+        """Con «Come scattato», «Automatico» e «Luce diurna» i cursori mostrano la temperatura equivalente."""
+        equivalent = self._ctx["wb_equivalents"].get(self.wb.currentData())
+        if equivalent is None:
+            return
+        for control, value in zip((self.temperature, self.tint), equivalent):
+            control.set_value(value)
+
+    def set_wb(self, temperature: float, tint: float) -> None:
+        """Bilanciamento scelto con il contagocce."""
+        set_combo(self.wb, "temperature")
+        self.temperature.set_value(temperature)
+        self.tint.set_value(tint)
+        self.pick_wb.setChecked(False)
+        self._update_applicability()
+        self.toneChanged.emit()
+
+    def _reset_develop(self) -> None:
+        fresh = Settings()
+        current = self.settings()
+        current.develop.wb_mode, current.develop.temperature, current.develop.tint = (
+            fresh.develop.wb_mode, fresh.develop.temperature, fresh.develop.tint)
+        current.tone = fresh.tone
+        self.set_settings(current)
+        self.toneChanged.emit()
 
     def _on_output(self, *_args) -> None:
         self._update_applicability()
@@ -540,28 +616,37 @@ class SettingsPanel(QWidget):
             self.stage_hint.setText("")
         self.stage_hint.setVisible(bool(self.stage_hint.text()))
 
-        # Sviluppo RAW
+        # Sviluppo
         dng_sensor = fmt == "dng" and stage_ok and self.raw_stage.currentData() == "sensor"
-        raw_controls = (self.wb, self.demosaic, self.auto_bright, self.exposure)
-        for w in raw_controls:
-            w.setEnabled(is_raw)
-        custom = self.wb.currentData() == "custom"
-        for spin in self.wb_spins:
-            spin.setEnabled(is_raw and custom and not dng_sensor)
+        has_image = ctx["has_image"]
+        for w in (self.curve, self.wb, self.pick_wb, self.temperature, self.tint, self.exposure,
+                  *self.tone_controls.values()):
+            w.setEnabled(has_image)
+        self.auto_bright.setEnabled(is_raw and fmt != "dng")
+        model = self.wb.model()
+        for key in ("daylight", "custom"):
+            item = model.item(self.wb.findData(key))
+            if item is not None:  # luce diurna e moltiplicatori hanno senso solo per i RAW
+                item.setEnabled(is_raw or not has_image)
+        if not has_image:
+            develop = "Apri una foto per regolare colori e toni."
+        elif fmt == "dng":
+            develop = ("Nel DNG le regolazioni diventano istruzioni per Lightroom e Photoshop (il bilanciamento "
+                       "vale in tutti i programmi): il RAW resta modificabile.")
+        elif not is_raw:
+            develop = "Su JPG, PNG e TIFF le alte luci bruciate dalla fotocamera non si recuperano."
+        else:
+            develop = ""
+        self.develop_hint.setText(develop)
+        self.develop_hint.setVisible(bool(develop))
+        self.demosaic.setEnabled(is_raw and not dng_sensor)
         reason = ""
-        if not ctx["has_image"]:
+        if not has_image:
             reason = "Apri una foto RAW per usare queste impostazioni."
         elif not is_raw:
             reason = "Non applicabile: la foto non è un RAW."
         elif dng_sensor:
-            self.wb.setEnabled(False)
-            self.demosaic.setEnabled(False)
-            self.auto_bright.setEnabled(False)
-            reason = ("Con l'uscita DNG bilanciamento, ricostruzione dei colori e luminosità si scelgono nel "
-                      "programma di sviluppo: qui vengono ignorati.")
-        elif fmt == "dng":
-            self.auto_bright.setEnabled(False)
-            reason = "Con l'uscita DNG la luminosità automatica si regola nel programma di sviluppo."
+            reason = "Con l'uscita DNG la ricostruzione dei colori la fa il programma di sviluppo."
         self.raw_hint.setText(reason)
         self.raw_hint.setVisible(bool(reason))
 
@@ -586,17 +671,19 @@ class SettingsPanel(QWidget):
     def set_image_context(self, info: dict | None) -> None:
         """Aggiorna il riquadro «Foto» e l'applicabilità dei controlli.
 
-        ``info``: title, details, noise (HTML), notes, is_raw, is_bayer, shot_wb.
+        ``info``: title, details, noise (HTML), notes, is_raw, is_bayer e ``wb_equivalents``: temperatura e
+        tinta equivalenti a «Come scattato», «Automatico» e «Luce diurna» ({modo: (K, tinta)}).
         """
         if info is None:
-            self._ctx = {"has_image": False, "is_raw": False, "is_bayer": False, "shot_wb": None}
+            self._ctx = _EMPTY_CONTEXT.copy()
             self.photo_title.setText("Nessuna foto aperta")
             self.photo_details.setText("Apri una foto RAW, JPG, PNG o TIFF per iniziare.")
             self.photo_noise.hide()
             self.photo_notes.hide()
         else:
             self._ctx = {"has_image": True, "is_raw": info["is_raw"], "is_bayer": info["is_bayer"],
-                         "shot_wb": info.get("shot_wb")}
+                         "wb_equivalents": info.get("wb_equivalents") or {}}
+            self._show_wb_equivalent()
             self.photo_title.setText(info["title"])
             self.photo_title.setToolTip(info["title"])
             self.photo_details.setText(info["details"])
@@ -731,10 +818,14 @@ class SettingsPanel(QWidget):
         d.detail = self.detail.value()
         d.hot_pixel_threshold = _hot_threshold(self.hot.value()) if self.hot_enabled.isChecked() else 0.0
         s.develop.wb_mode = self.wb.currentData()
-        s.develop.wb_custom = tuple(spin.value() for spin in self.wb_spins)
+        s.develop.temperature = self.temperature.value()
+        s.develop.tint = self.tint.value()
         s.develop.demosaic = self.demosaic.currentData()
         s.tone.auto_brightness = self.auto_bright.isChecked()
         s.tone.exposure_ev = self.exposure.value()
+        for key, control in self.tone_controls.items():
+            setattr(s.tone, key, control.value())
+        s.tone.curve = self.curve.points()
         o = s.output
         o.format = self.format.currentData()
         o.bit_depth = int(self.bits.currentData())
@@ -751,8 +842,7 @@ class SettingsPanel(QWidget):
         s = self._settings
         self._params_by_algorithm[s.denoise.algorithm] = dict(s.denoise.params)
         widgets = [self.algorithm, self.raw_stage, self.wb, self.demosaic, self.auto_bright, self.format,
-                   self.bits, self.folder, self.name, self.overwrite, self.copy_metadata, self.hot_enabled,
-                   *self.wb_spins]
+                   self.bits, self.folder, self.name, self.overwrite, self.copy_metadata, self.hot_enabled]
         for w in widgets:
             w.blockSignals(True)
         try:
@@ -765,11 +855,14 @@ class SettingsPanel(QWidget):
             if s.denoise.hot_pixel_threshold > 0:
                 self.hot.set_value(_hot_decision(s.denoise.hot_pixel_threshold))
             set_combo(self.wb, s.develop.wb_mode)
-            for spin, value in zip(self.wb_spins, s.develop.wb_custom):
-                spin.setValue(value)
+            self.temperature.set_value(s.develop.temperature)
+            self.tint.set_value(s.develop.tint)
             set_combo(self.demosaic, s.develop.demosaic)
             self.auto_bright.setChecked(s.tone.auto_brightness)
             self.exposure.set_value(s.tone.exposure_ev)
+            for key, control in self.tone_controls.items():
+                control.set_value(getattr(s.tone, key))
+            self.curve.set_points(s.tone.curve)
             set_combo(self.format, s.output.format)
             set_combo(self.bits, str(s.output.bit_depth))
             self.quality.set_value(s.output.jpeg_quality)
@@ -782,3 +875,5 @@ class SettingsPanel(QWidget):
                 w.blockSignals(False)
         self._rebuild_algorithm_form()
         self._update_applicability()
+        if s.develop.wb_mode != "temperature":
+            self._show_wb_equivalent()
