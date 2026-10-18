@@ -211,16 +211,24 @@ fotocamera, applicata all'istante.
 
 ## Salvare
 
-![Avviso al termine dell'esportazione](screenshots/06-esportazione.jpg)
+Il pannello a destra regola soltanto la foto: **come salvarla** si sceglie nella finestra che si
+apre con **Esporta…** (`Ctrl+E`):
 
-**Esporta come…** (`Ctrl+Maiusc+E`) apre una finestra in cui scegli:
+![Finestra di esportazione](screenshots/10-esporta.png)
 
 - **Dove salvare**: nella stessa cartella della foto, in una sottocartella accanto alla foto (es.
-  `denoised`) oppure in una cartella a scelta (*Sfoglia…*);
+  `denoised`) oppure in una cartella a scelta (*Sfoglia…*).
 - **Formato**: TIFF o PNG (8 o 16 bit), JPEG (qualità 1–100) oppure **DNG**, il formato RAW aperto
   che Lightroom, darktable, Capture One e simili sviluppano come l'originale. NEF, CR3, ARW e gli
   altri RAW delle fotocamere sono formati chiusi che nessun programma esterno può scrivere: per
   riesportare un RAW si usa il DNG, che si crea solo da foto RAW.
+- **Nome del file**: di norma `{nome}`, il nome dell'originale con l'estensione del formato scelto
+  (`DSC_0001.NEF` → `DSC_0001.tif`). Con il pulsante `{…}` si aggiungono `{metodo}`, `{iso}` o `{data}`.
+- **Copia i metadati dell'originale**.
+
+In fondo alla finestra compare il percorso esatto del file. La volta successiva la finestra
+ripropone le stesse scelte: basta *Invio* per confermare. Se il file esiste già, l'app chiede se
+sovrascriverlo o salvarlo con un altro nome.
 
 Nel **DNG** il RAW resta da sviluppare: il bilanciamento del bianco diventa quello «come scattato»
 del file, che rispettano tutti i programmi, e l'esposizione la sua esposizione di base. Contrasto,
@@ -229,21 +237,7 @@ DNG in Lightroom o Photoshop le ritrovi già applicate e modificabili. Altri pro
 Capture One) ne leggono solo una parte, e il risultato di Lightroom è simile ma non identico a quello
 di Denoiser, che usa formule proprie.
 
-![Finestra di esportazione](screenshots/10-esporta.png)
-
-Il file tiene il **nome dell'originale** con l'estensione del formato scelto (`DSC_0001.NEF` →
-`DSC_0001.tif`). In fondo alla finestra compare il percorso esatto. **Esporta** (`Ctrl+E`) salva
-subito, con la cartella e il formato dell'ultima scelta.
-
-Le stesse scelte, con qualche opzione in più, sono nel pannello **Salvataggio**:
-
-- **Formato**: TIFF o PNG (8 o 16 bit), JPEG (qualità 1–100), **DNG** (solo da RAW: un RAW
-  ripulito da sviluppare in Lightroom, darktable, Capture One…).
-- **Cartella**: un nome semplice (es. `denoised`) crea una sottocartella accanto alla foto;
-  un percorso completo salva sempre lì.
-- **Nome del file**: con i segnaposto `{nome}`, `{metodo}`, `{iso}`, `{data}` (pulsante `{…}`).
-  Sotto compare il percorso esatto del file che verrà creato.
-- **Sovrascrivi senza chiedere** (per sicurezza non viene ricordato) e **Copia i metadati**.
+![Avviso al termine dell'esportazione](screenshots/06-esportazione.jpg)
 
 Al termine, un avviso riassume formato, dimensione, tempo e metodo, con i pulsanti *Apri cartella*,
 *Mostra il file* e *Apri la foto*.
@@ -259,8 +253,8 @@ cartella e stesso formato) al nome si aggiunge `_1`.
 1. [Apri la cartella](#aprire-una-cartella) e seleziona nel carosello le foto da esportare
    (`Ctrl+clic`, `Maiusc+clic` o *Seleziona tutte*).
 2. **Esporta selezionate…** (`Ctrl+B`, pulsante nell'intestazione del carosello o menu *File*).
-3. Nella finestra scegli il **metodo**, dove salvare, il **formato** e cosa fare se il file esiste già
-   (altro nome `_1`, `_2`…, sovrascrivere o saltare la foto).
+3. Nella stessa finestra di *Esporta* scegli dove salvare, **formato** e nome, più il **metodo** e cosa
+   fare se il file esiste già (altro nome `_1`, `_2`…, sovrascrivere o saltare la foto).
 4. **Esporta**. In basso vedi la foto in corso e il tempo stimato per tutte; **Interrompi** (`Esc`)
    si ferma senza lasciare file a metà.
 
@@ -303,7 +297,7 @@ salvataggio). Da *Preset* puoi eliminare i tuoi preset o aprirne la cartella.
 | `Ctrl+O` / `Ctrl+Maiusc+O` | Apri una foto / una cartella |
 | `Ctrl+Invio` | Applica la riduzione del rumore |
 | `Pag↑` / `Pag↓` | Foto precedente / successiva del carosello |
-| `Ctrl+E` / `Ctrl+Maiusc+E` | Esporta / Esporta come |
+| `Ctrl+E` | Esporta (finestra con cartella, formato e nome) |
 | `Ctrl+B` | Esporta le foto selezionate nel carosello |
 | `Ctrl+Z` / `Ctrl+Y` | Annulla / Ripeti |
 | `Ctrl+0` / `Ctrl+1` / `Ctrl+2` | Adatta / 100% / 200% |
@@ -338,7 +332,7 @@ darktable o RawTherapee: serve Adobe DNG Converter. In alternativa, imposta la f
 compressione «senza perdita»: i file sono più grandi ma si aprono direttamente.
 
 **Dove finiscono i file?**
-Nella sottocartella `denoised` accanto alla foto originale, salvo diversa scelta in *Salvataggio*.
+Nella sottocartella `denoised` accanto alla foto originale, salvo diversa scelta nella finestra *Esporta*.
 *File → Apri la cartella di salvataggio* la apre in Esplora risorse.
 
 **Si è verificato un errore imprevisto.**

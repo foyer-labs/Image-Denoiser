@@ -46,7 +46,7 @@ from ..io.dng_converter import find_converter
 from ..algorithms import get_algorithm
 from ..color import srgb_decode
 from ..develop import ColorInfo, histogram, render_tone, temperature_from_multipliers
-from ..io.formats import OUTPUT_EXTENSIONS, file_dialog_filter, is_supported, kind_of
+from ..io.formats import file_dialog_filter, is_supported, kind_of
 from ..io.naming import output_path, unique_path
 from ..noise import estimate_sigma, sample_tiles
 from ..pipeline import Analysis, analyze, denoise_region, noise_judgement, render, uses_sensor_stage
@@ -249,7 +249,6 @@ class MainWindow(QMainWindow):
         self._refresh_recent()
         self._update_dng_converter()
         self._push_history(force=True)
-        self._update_output_example()
         self._update_enabled()
         self.keybar.setVisible(self.act_keybar.isChecked())
         geometry = self._qs.value("geometria")
@@ -454,10 +453,8 @@ class MainWindow(QMainWindow):
                                  "Mostra tutte le foto di una cartella nel carosello in basso", "batch")
         self.act_apply = a("Applica", self._apply, "Ctrl+Return",
                            "Riduce il rumore della foto aperta con il metodo e le regolazioni scelti")
-        self.act_export = a("Esporta", self._export, "Ctrl+E",
-                            "Salva subito la foto ripulita, con cartella e formato dell'ultima esportazione", "export")
-        self.act_export_as = a("Esporta come…", self._export_as, "Ctrl+Shift+E",
-                               "Scegli cartella e formato (TIFF, PNG, JPEG o DNG) prima di salvare")
+        self.act_export = a("Esporta…", self._export, "Ctrl+E",
+                            "Scegli dove e come salvare la foto ripulita (formato, cartella, nome)", "export")
         self.act_batch = a("Esporta selezionate…", self._export_selected, "Ctrl+B",
                            "Esporta tutte le foto selezionate nel carosello, scegliendo metodo, cartella e formato",
                            "batch")
@@ -498,7 +495,7 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_open_folder)
         self.recent_menu = m.addMenu("Apri recenti")
         m.addSeparator()
-        for act in (self.act_export, self.act_export_as, self.act_batch):
+        for act in (self.act_export, self.act_batch):
             m.addAction(act)
         m.addSeparator()
         m.addAction(self.act_out_folder)
@@ -575,8 +572,7 @@ class MainWindow(QMainWindow):
         bar.addWidget(spacer)
         bar.addWidget(ActionButton(self.act_help, show_text=False))
         bar.addSeparator()
-        bar.addWidget(ActionButton(self.act_export_as, "Esporta come…"))
-        export_button = ActionButton(self.act_export, "Esporta")
+        export_button = ActionButton(self.act_export, "Esporta…")
         export_button.setObjectName("primary")
         bar.addWidget(export_button)
         export_selected = ActionButton(self.act_batch, "Esporta selezionate…")
@@ -604,7 +600,6 @@ class MainWindow(QMainWindow):
         self.panel.denoiseChanged.connect(self._on_denoise_changed)
         self.panel.toneChanged.connect(self._on_tone_changed)
         self.panel.developChanged.connect(self._on_develop_changed)
-        self.panel.outputChanged.connect(self._on_output_changed)
         self.panel.presetChosen.connect(self._apply_preset)
         self.panel.savePresetRequested.connect(self._save_preset)
         self.panel.resetRequested.connect(self._reset_settings)
@@ -818,7 +813,6 @@ class MainWindow(QMainWindow):
         self._add_recent(path)
         self._update_info()
         self._update_histogram()
-        self._update_output_example()
         self.stack.setCurrentWidget(self._view_page)
         self.view.set_overlay("")
         self._refresh_base(reset_view=reset_view)
@@ -1146,7 +1140,6 @@ class MainWindow(QMainWindow):
         if not self._applying_history:
             self._history_timer.start()
         self._update_preset_label()
-        self._update_output_example()
 
     def _on_denoise_changed(self) -> None:
         self._settings_changed_common()
@@ -1164,21 +1157,6 @@ class MainWindow(QMainWindow):
         self._settings_changed_common()
         self.view.mark_stale()
         self._develop_timer.start()
-
-    def _on_output_changed(self) -> None:
-        self._settings_changed_common()
-
-    def _update_output_example(self) -> None:
-        settings = self.panel.settings()
-        if self._image is None:
-            self.panel.set_output_example(
-                f"Esempio: …\\{settings.output.folder or '.'}\\DSC_0001{'_dn' if settings.output.name_template == '{nome}_dn' else ''}"
-                f"{OUTPUT_EXTENSIONS[settings.output.format]}"
-            )
-            return
-        path = output_path(self._image.meta, settings.output, settings.denoise.algorithm)
-        self.panel.set_output_example(f"Verrà salvato come: {path}")
-        self.act_export.setToolTip(f"Salva in: {path} (Ctrl+E)")
 
     # ================================================================== annulla / ripeti
 
@@ -1203,7 +1181,6 @@ class MainWindow(QMainWindow):
         self._save_timer.start()
         self._photo_timer.start()
         self._update_preset_label()
-        self._update_output_example()
         self._update_info()
         if raw_develop(current) != raw_develop(previous) and self._image is not None:
             self._develop_timer.start()
@@ -1473,7 +1450,6 @@ class MainWindow(QMainWindow):
         busy = self._job is not None or self._loading
         has_image = self._image is not None
         self.act_export.setEnabled(has_image and not busy)
-        self.act_export_as.setEnabled(has_image and not busy)
         self.act_apply.setEnabled(has_image and not self._applied and not self._loading)
         self.panel.set_applied(self._applied if has_image else None, shortcut_text(self.act_apply))
         selected = len(self.filmstrip.selected_paths())
@@ -1490,10 +1466,7 @@ class MainWindow(QMainWindow):
     # ================================================================== esportazione
 
     def _export(self) -> None:
-        self._export_to(None)
-
-    def _export_as(self) -> None:
-        """Fa scegliere cartella e formato; la scelta vale poi anche per «Esporta»."""
+        """Finestra «Esporta» per la foto aperta: dove, in che formato e con che nome salvarla."""
         if self._image is None or self._job is not None:
             return
         settings = self.panel.settings()
@@ -1508,7 +1481,7 @@ class MainWindow(QMainWindow):
             self._export_to(None)
 
     def _remember_export_choice(self, choice: ExportChoice) -> None:
-        self.panel.set_output(choice.folder, choice.format, choice.bit_depth, choice.jpeg_quality)
+        self.panel.set_output(choice.output(self.panel.settings().output))
         self._qs.setValue("formato_non_raw", choice.non_raw_format)
         self._qs.setValue("se_esiste", choice.policy)
 
@@ -1864,14 +1837,14 @@ class MainWindow(QMainWindow):
             "<i>Applica le modifiche a tutte le selezionate</i> nel carosello.</li>"
             "<li>Regola <b>Grana</b> e <b>Macchie di colore</b> (1 = rumore misurato). Tutto il resto ha già "
             "valori consigliati; la spiegazione di ogni controllo compare in basso nel pannello.</li>"
-            "<li><b>Esporta come…</b> (Ctrl+Maiusc+E) per scegliere cartella e formato (TIFF, PNG, JPEG o DNG); "
-            "<b>Esporta</b> (Ctrl+E) salva subito con l'ultima scelta. Per più foto: selezionale nel carosello "
+            "<li><b>Esporta</b> (Ctrl+E): nella finestra scegli dove salvare, il formato (TIFF, PNG, JPEG o DNG) "
+            "e il nome; la volta dopo ritrovi le stesse scelte. Per più foto: selezionale nel carosello "
             "con Ctrl+clic o Maiusc+clic e usa <b>Esporta selezionate</b> (Ctrl+B).</li></ol>"
             "<h3>Scorciatoie</h3><table>"
             "<tr><td>Ctrl+O / Ctrl+Maiusc+O</td><td>Apri una foto / una cartella</td></tr>"
             "<tr><td>Ctrl+Invio</td><td>Applica la riduzione del rumore</td></tr>"
             "<tr><td>Pag↑ / Pag↓</td><td>Foto precedente / successiva del carosello</td></tr>"
-            "<tr><td>Ctrl+E / Ctrl+Maiusc+E</td><td>Esporta / Esporta come</td></tr>"
+            "<tr><td>Ctrl+E</td><td>Esporta</td></tr>"
             "<tr><td>Ctrl+B</td><td>Esporta le foto selezionate</td></tr><tr><td>Ctrl+Z / Ctrl+Y</td><td>Annulla / Ripeti</td></tr>"
             "<tr><td>Ctrl+0 / Ctrl+1 / Ctrl+2</td><td>Adatta / 100% / 200%</td></tr>"
             "<tr><td>Ctrl + / Ctrl −, rotellina</td><td>Zoom</td></tr><tr><td>Frecce (+ Maiusc)</td><td>Sposta la vista</td></tr>"

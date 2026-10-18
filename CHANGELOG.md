@@ -5,6 +5,17 @@ Tutte le modifiche rilevanti, dalla più recente. Formato ispirato a
 
 ## [Non rilasciato]
 
+## [0.14.0] - 2026-10-18
+
+### Modificato
+
+- Le scelte del salvataggio (cartella, formato, bit, qualità JPEG, nome del file, metadati) non sono più
+  nel pannello a destra, che ora regola soltanto la foto: si scelgono nella finestra che si apre con
+  **Esporta…** (`Ctrl+E`), la stessa di *Esporta selezionate*. La finestra ripropone le scelte
+  dell'ultima esportazione.
+- *Esporta come…* non c'è più: *Esporta* apre sempre la finestra.
+- Nella finestra di esportazione una nota spiega come le regolazioni arrivano nel DNG.
+
 ## [0.13.0] - 2026-10-18
 
 ### Aggiunto
@@ -199,7 +210,8 @@ Codice distribuito con licenza MIT.
 - Correzioni di memoria, concorrenza, cache e gestione degli errori; registro degli errori in
   `%LOCALAPPDATA%\Denoiser\errori.log`.
 
-[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.13.0...HEAD
+[Non rilasciato]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/foyer-labs/Image-Denoiser/compare/v0.11.1...v0.11.2

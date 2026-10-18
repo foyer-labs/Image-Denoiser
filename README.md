@@ -69,7 +69,7 @@ Una scheda video (NVIDIA, AMD o Intel, tramite DirectML) accelera molto le reti 
 
 1. **Apri** una foto (`Ctrl+O`) o una cartella (`Ctrl+Maiusc+O`), anche trascinandola nella finestra. Si apre al 100%, dove il rumore si vede davvero.
 2. **Scegli il metodo e applica** (`Ctrl+Invio`); regola «Grana» e «Macchie di colore» se serve: 1 = rumore misurato. Tutto il resto ha già valori consigliati.
-3. **Esporta come…** (`Ctrl+Maiusc+E`) per scegliere cartella e formato (TIFF, PNG, JPEG o DNG), poi **Esporta** (`Ctrl+E`) per le successive. Per più foto: selezionale nel carosello ed **Esporta selezionate** (`Ctrl+B`).
+3. **Esporta** (`Ctrl+E`): nella finestra scegli cartella, formato (TIFF, PNG, JPEG o DNG) e nome. Per più foto: selezionale nel carosello ed **Esporta selezionate** (`Ctrl+B`).
 
 Ogni pulsante mostra la propria scorciatoia, e `F1` apre la guida con l'elenco completo.
 

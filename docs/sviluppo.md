@@ -45,7 +45,7 @@ src/denoiser/
     ├── splash.py       schermata di avvio con barra di avanzamento
     ├── filmstrip.py    carosello delle foto di una cartella (miniature, selezione, applica alle selezionate)
     ├── curve_editor.py curva dei toni modificabile sopra l'istogramma
-    ├── export_dialog.py finestra «Esporta come» / «Esporta N foto»: cartella, formato, metodo
+    ├── export_dialog.py finestra «Esporta» (una foto o N): cartella, formato, nome, metadati, metodo
     ├── settings_panel.py, widgets.py, style.py, workers.py
 packaging/              PyInstaller: denoiser.spec, icona, punti d'avvio
 tests/                  test pytest con immagini e DNG sintetici

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -11,8 +10,6 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
-    QMenu,
     QPushButton,
     QSizePolicy,
     QToolButton,
@@ -21,8 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..algorithms import ALGORITHMS, get_algorithm
-from ..io.naming import PLACEHOLDERS
-from ..settings import DEMOSAIC_ALGORITHMS, OUTPUT_FORMATS, RAW_STAGES, WB_MODES, Settings
+from ..settings import DEMOSAIC_ALGORITHMS, RAW_STAGES, WB_MODES, Settings
 from .curve_editor import CurveEditor
 from .style import OK, WARN, icon
 from .widgets import (
@@ -41,14 +37,6 @@ _EXPLAIN_DEFAULT = (
     "Passa il mouse su un controllo per leggerne qui la spiegazione. "
     "Doppio clic su un cursore: torna al valore consigliato."
 )
-
-_FORMAT_TIPS = {
-    "tiff": "TIFF: massima qualità, per continuare il ritocco in altri programmi.",
-    "jpeg": "JPEG: file piccolo, per condividere e stampare.",
-    "png": "PNG: senza perdita di qualità, file grandi.",
-    "dng": "DNG: un RAW ripulito, da sviluppare ancora in Lightroom, darktable e simili (solo da foto RAW).",
-}
-
 
 _EMPTY_CONTEXT = {"has_image": False, "is_raw": False, "is_bayer": False, "wb_equivalents": {}}
 
@@ -78,7 +66,6 @@ class SettingsPanel(QWidget):
     denoiseChanged = Signal()
     toneChanged = Signal()
     developChanged = Signal()
-    outputChanged = Signal()
     presetChosen = Signal(str)
     savePresetRequested = Signal()
     resetRequested = Signal()
@@ -131,7 +118,6 @@ class SettingsPanel(QWidget):
         self._reset_params_button = reset_params
         layout.addWidget(self.algo_box)
         layout.addWidget(self._build_raw())
-        layout.addWidget(self._build_output())
         layout.addStretch(1)
         self._rebuild_algorithm_form()
         self._install_explain(self)
@@ -401,95 +387,6 @@ class SettingsPanel(QWidget):
         form.addRow(form_label(""), dng_row)
         return box
 
-    def _build_output(self) -> QGroupBox:
-        o = self._settings.output
-        box = QGroupBox("SALVATAGGIO")
-        form = make_form(box)
-        self.format = make_combo(OUTPUT_FORMATS, o.format, tooltips=_FORMAT_TIPS)
-        self.format.setToolTip("\n".join(_FORMAT_TIPS.values()))
-        self.format.currentIndexChanged.connect(self._on_output)
-        form.addRow(form_label("Formato"), self.format)
-
-        self.bits = make_combo({"16": "16 bit (per ritoccare ancora)", "8": "8 bit (stampa e web)"}, str(o.bit_depth))
-        self.bits.setToolTip(
-            "16 bit conserva le sfumature se ritoccherai ancora la foto (file più grandi). 8 bit basta per "
-            "stampa e web. Vale per TIFF e PNG."
-        )
-        self.bits.currentIndexChanged.connect(self._on_output)
-        form.addRow(form_label("Bit per colore"), self.bits)
-
-        self.quality = FloatControl(1, 100, 1, o.jpeg_quality, decimals=0, default=95)
-        self.quality.setToolTip("Qualità JPEG: 90–95 = ottima. Sotto 80 compaiono blocchetti.")
-        self.quality.valueChanged.connect(self._on_output)
-        form.addRow(form_label("Qualità JPEG"), self.quality)
-
-        self.folder = QLineEdit(o.folder)
-        self.folder.setToolTip(
-            "Cartella di destinazione: un nome semplice (es. «denoised») crea una sottocartella accanto alla foto; "
-            "un percorso completo salva sempre lì."
-        )
-        self.folder.editingFinished.connect(self._on_output)
-        browse = QToolButton()
-        browse.setIcon(icon("folder"))
-        browse.setToolTip("Scegli la cartella")
-        browse.clicked.connect(self._choose_folder)
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addWidget(self.folder, 1)
-        row.addWidget(browse)
-        folder_row = QWidget()
-        folder_row.setLayout(row)
-        form.addRow(form_label("Cartella"), folder_row)
-
-        self.name = QLineEdit(o.name_template)
-        self.name.setToolTip(
-            "Modello del nome del file. Segnaposto:\n" + "\n".join(f"{{{k}}}: {v}" for k, v in PLACEHOLDERS.items())
-        )
-        self.name.editingFinished.connect(self._on_output)
-        insert = QToolButton()
-        insert.setText("{…}")
-        insert.setToolTip("Inserisci un segnaposto nel nome")
-        insert.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        menu = QMenu(insert)
-        for key, desc in PLACEHOLDERS.items():
-            act = QAction(f"{{{key}}} — {desc}", menu)
-            act.triggered.connect(lambda _c=False, k=key: self._insert_placeholder(k))
-            menu.addAction(act)
-        insert.setMenu(menu)
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addWidget(self.name, 1)
-        row.addWidget(insert)
-        name_row = QWidget()
-        name_row.setLayout(row)
-        form.addRow(form_label("Nome del file"), name_row)
-        self.example = hint_label()
-        form.addRow("", self.example)
-
-        self.overwrite = QCheckBox("Sovrascrivi senza chiedere")
-        self.overwrite.setChecked(False)
-        self.overwrite.setToolTip(
-            "Se il file esiste già viene sostituito senza conferma. Per sicurezza questa scelta non viene "
-            "ricordata alla prossima apertura dell'app."
-        )
-        self.overwrite.toggled.connect(self._on_output)
-        form.addRow("", self.overwrite)
-
-        self.copy_metadata = QCheckBox("Copia i metadati dell'originale")
-        self.copy_metadata.setChecked(o.copy_metadata)
-        self.copy_metadata.toggled.connect(self._on_output)
-        form.addRow(form_label("Metadati"), self.copy_metadata)
-        self.output_hint = hint_label()
-        form.addRow("", self.output_hint)
-        from ..io.metadata import find_exiftool
-
-        tool = find_exiftool()
-        self.copy_metadata.setToolTip(
-            "Data, fotocamera, obiettivo, esposizione, GPS, parole chiave… copiati nel file salvato. "
-            + ("Si usa ExifTool." if tool else "ExifTool non trovato: vengono copiati solo i dati essenziali dei JPG.")
-        )
-        return box
-
     # ================================================================== eventi
 
     def _install_explain(self, root: QWidget) -> None:
@@ -563,20 +460,6 @@ class SettingsPanel(QWidget):
         self.set_settings(current)
         self.toneChanged.emit()
 
-    def _on_output(self, *_args) -> None:
-        self._update_applicability()
-        self.outputChanged.emit()
-
-    def _insert_placeholder(self, key: str) -> None:
-        self.name.insert("{" + key + "}")
-        self._on_output()
-
-    def _choose_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Cartella di uscita")
-        if folder:
-            self.folder.setText(folder)
-            self._on_output()
-
     def _choose_dng_converter(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Adobe DNG Converter", "", "Programmi (*.exe);;Tutti i file (*)")
         if path:
@@ -587,7 +470,6 @@ class SettingsPanel(QWidget):
     def _update_applicability(self) -> None:
         ctx = self._ctx
         is_raw, is_bayer = ctx["is_raw"], ctx["is_bayer"]
-        fmt = self.format.currentData()
         algorithm = get_algorithm(self.algorithm.currentData())
 
         # Reti «cieche»: la forza è una miscela con l'originale, oltre 1 non ha effetto.
@@ -617,12 +499,11 @@ class SettingsPanel(QWidget):
         self.stage_hint.setVisible(bool(self.stage_hint.text()))
 
         # Sviluppo
-        dng_sensor = fmt == "dng" and stage_ok and self.raw_stage.currentData() == "sensor"
         has_image = ctx["has_image"]
         for w in (self.curve, self.wb, self.pick_wb, self.temperature, self.tint, self.exposure,
                   *self.tone_controls.values()):
             w.setEnabled(has_image)
-        self.auto_bright.setEnabled(is_raw and fmt != "dng")
+        self.auto_bright.setEnabled(is_raw)
         model = self.wb.model()
         for key in ("daylight", "custom"):
             item = model.item(self.wb.findData(key))
@@ -630,41 +511,20 @@ class SettingsPanel(QWidget):
                 item.setEnabled(is_raw or not has_image)
         if not has_image:
             develop = "Apri una foto per regolare colori e toni."
-        elif fmt == "dng":
-            develop = ("Nel DNG le regolazioni diventano istruzioni per Lightroom e Photoshop (il bilanciamento "
-                       "vale in tutti i programmi): il RAW resta modificabile.")
         elif not is_raw:
             develop = "Su JPG, PNG e TIFF le alte luci bruciate dalla fotocamera non si recuperano."
         else:
             develop = ""
         self.develop_hint.setText(develop)
         self.develop_hint.setVisible(bool(develop))
-        self.demosaic.setEnabled(is_raw and not dng_sensor)
+        self.demosaic.setEnabled(is_raw)
         reason = ""
         if not has_image:
             reason = "Apri una foto RAW per usare queste impostazioni."
         elif not is_raw:
             reason = "Non applicabile: la foto non è un RAW."
-        elif dng_sensor:
-            reason = "Con l'uscita DNG la ricostruzione dei colori la fa il programma di sviluppo."
         self.raw_hint.setText(reason)
         self.raw_hint.setVisible(bool(reason))
-
-        # Salvataggio
-        self.bits.setEnabled(fmt in ("tiff", "png"))
-        self.quality.setEnabled(fmt == "jpeg")
-        model = self.format.model()
-        dng_index = self.format.findData("dng")
-        item = model.item(dng_index) if hasattr(model, "item") else None
-        if item is not None:
-            item.setEnabled(not ctx["has_image"] or is_raw)
-        if fmt == "dng":
-            kind = ("a mosaico, con i dati del sensore ripuliti" if dng_sensor
-                    else "lineare, con il bilanciamento del bianco già applicato")
-            self.output_hint.setText(f"DNG {kind}.")
-        else:
-            self.output_hint.setText("")
-        self.output_hint.setVisible(bool(self.output_hint.text()))
 
     # ================================================================== stato dall'esterno
 
@@ -745,23 +605,9 @@ class SettingsPanel(QWidget):
         if index >= 0 and index != self.algorithm.currentIndex():
             self.algorithm.setCurrentIndex(index)  # emette denoiseChanged
 
-    def set_output(self, folder: str, fmt: str, bit_depth: int, jpeg_quality: int) -> None:
-        """Cartella e formato scelti nella finestra di esportazione: valgono anche per «Esporta»."""
-        widgets = (self.format, self.bits, self.folder)
-        for w in widgets:
-            w.blockSignals(True)
-        try:
-            set_combo(self.format, fmt)
-            set_combo(self.bits, str(bit_depth))
-            self.quality.set_value(jpeg_quality)
-            self.folder.setText(folder)
-        finally:
-            for w in widgets:
-                w.blockSignals(False)
-        self._on_output()
-
-    def set_output_example(self, text: str) -> None:
-        self.example.setText(text)
+    def set_output(self, output) -> None:
+        """Salvataggio scelto nella finestra di esportazione: si ricorda per la prossima volta."""
+        self._settings.output = Settings.from_dict({"output": output.__dict__}).output
 
     def current_algorithm(self):
         return get_algorithm(self.algorithm.currentData())
@@ -826,14 +672,7 @@ class SettingsPanel(QWidget):
         for key, control in self.tone_controls.items():
             setattr(s.tone, key, control.value())
         s.tone.curve = self.curve.points()
-        o = s.output
-        o.format = self.format.currentData()
-        o.bit_depth = int(self.bits.currentData())
-        o.jpeg_quality = int(round(self.quality.value()))
-        o.folder = self.folder.text().strip()
-        o.name_template = self.name.text().strip() or "{nome}"
-        o.overwrite = self.overwrite.isChecked()
-        o.copy_metadata = self.copy_metadata.isChecked()
+        # Il salvataggio non ha controlli nel pannello: si sceglie nella finestra «Esporta».
         return Settings.from_dict(s.to_dict())
 
     def set_settings(self, settings: Settings) -> None:
@@ -841,8 +680,7 @@ class SettingsPanel(QWidget):
         self._settings = Settings.from_dict(settings.to_dict())
         s = self._settings
         self._params_by_algorithm[s.denoise.algorithm] = dict(s.denoise.params)
-        widgets = [self.algorithm, self.raw_stage, self.wb, self.demosaic, self.auto_bright, self.format,
-                   self.bits, self.folder, self.name, self.overwrite, self.copy_metadata, self.hot_enabled]
+        widgets = [self.algorithm, self.raw_stage, self.wb, self.demosaic, self.auto_bright, self.hot_enabled]
         for w in widgets:
             w.blockSignals(True)
         try:
@@ -863,13 +701,6 @@ class SettingsPanel(QWidget):
             for key, control in self.tone_controls.items():
                 control.set_value(getattr(s.tone, key))
             self.curve.set_points(s.tone.curve)
-            set_combo(self.format, s.output.format)
-            set_combo(self.bits, str(s.output.bit_depth))
-            self.quality.set_value(s.output.jpeg_quality)
-            self.folder.setText(s.output.folder)
-            self.name.setText(s.output.name_template)
-            self.overwrite.setChecked(s.output.overwrite)
-            self.copy_metadata.setChecked(s.output.copy_metadata)
         finally:  # i segnali non devono restare bloccati anche se un valore non è valido
             for w in widgets:
                 w.blockSignals(False)
